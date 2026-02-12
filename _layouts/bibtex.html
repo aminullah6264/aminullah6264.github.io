@@ -1,0 +1,83 @@
+---
+layout: default
+---
+<!-- _layouts/bibtex.html -->
+<div class="post">
+  <header class="post-header">
+    <h1 class="post-title">{{ entry.title }}</h1>
+    <p class="post-description">
+      {% for author in entry.author_array %}
+        {% unless forloop.first %}{% if forloop.last %} and {% else %}, {% endif %}{% endunless %}
+        {{ author.first }} {{ author.last }}
+      {% endfor %}
+    </p>
+  </header>
+
+  <article>
+    {% if entry.preview %}
+      <div class="mb-4">
+        {% if entry.preview contains '://' %}
+          <img data-zoomable class="img-fluid rounded z-depth-1" src="{{ entry.preview }}" alt="{{ entry.title }} preview">
+        {% else %}
+          {% assign entry_path = entry.preview | prepend: '/assets/img/publication_preview/' %}
+          {% include figure.html path=entry_path class="img-fluid rounded z-depth-1" zoomable=true alt=entry.title %}
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {% assign proceedings = "inproceedings,incollection" | split: ',' %}
+    {% assign thesis = "thesis,mastersthesis,phdthesis" | split: ',' %}
+    {% if entry.type == "article" %}
+      {% capture venue %}<em>{{ entry.journal }}</em>{% endcapture %}
+    {% elsif proceedings contains entry.type %}
+      {% capture venue %}<em>In {{ entry.booktitle }}</em>{% endcapture %}
+    {% elsif thesis contains entry.type %}
+      {% capture venue %}<em>{{ entry.school }}</em>{% endcapture %}
+    {% else %}
+      {% capture venue %}{% endcapture %}
+    {% endif %}
+
+    <p>{{ venue }}{% if entry.year %}, {{ entry.year }}{% endif %}</p>
+
+    {% if entry.abstract %}
+      <h3>Abstract</h3>
+      <p>{{ entry.abstract }}</p>
+    {% endif %}
+
+    <h3>Resources</h3>
+    <p>
+      {% if entry.html %}<a class="btn btn-sm z-depth-0" href="{{ entry.html }}">HTML</a>{% endif %}
+      {% if entry.pdf %}
+        {% if entry.pdf contains '://' %}
+          <a class="btn btn-sm z-depth-0" href="{{ entry.pdf }}">PDF</a>
+        {% else %}
+          <a class="btn btn-sm z-depth-0" href="{{ entry.pdf | prepend: '/assets/pdf/' | relative_url }}">PDF</a>
+        {% endif %}
+      {% endif %}
+      {% if entry.code %}<a class="btn btn-sm z-depth-0" href="{{ entry.code }}">Code</a>{% endif %}
+      {% if entry.dataset %}<a class="btn btn-sm z-depth-0" href="{{ entry.dataset }}">Dataset</a>{% endif %}
+      {% if entry.slides %}
+        {% if entry.slides contains '://' %}
+          <a class="btn btn-sm z-depth-0" href="{{ entry.slides }}">Slides</a>
+        {% else %}
+          <a class="btn btn-sm z-depth-0" href="{{ entry.slides | prepend: '/assets/pdf/' | relative_url }}">Slides</a>
+        {% endif %}
+      {% endif %}
+      {% if entry.poster %}
+        {% if entry.poster contains '://' %}
+          <a class="btn btn-sm z-depth-0" href="{{ entry.poster }}">Poster</a>
+        {% else %}
+          <a class="btn btn-sm z-depth-0" href="{{ entry.poster | prepend: '/assets/pdf/' | relative_url }}">Poster</a>
+        {% endif %}
+      {% endif %}
+      {% if entry.website %}<a class="btn btn-sm z-depth-0" href="{{ entry.website }}">Website</a>{% endif %}
+    </p>
+
+    {% if entry.bibtex_show %}
+      <h3>BibTeX</h3>
+      {% highlight bibtex %}{{ entry.bibtex | hideCustomBibtex }}{% endhighlight %}
+    {% endif %}
+
+    <p><a href="{{ '/publications/' | relative_url }}">← Back to publications</a></p>
+  </article>
+</div>
