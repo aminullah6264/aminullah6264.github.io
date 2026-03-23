@@ -664,6 +664,20 @@ footer.sticky-bottom {
             color: var(--global-theme-color);
             border-color: var(--global-theme-color);
           }
+
+          &.publication-details-btn {
+            background-color: #a1d99b;
+            border-color: #a1d99b;
+            color: #1f3b24;
+            font-weight: 600;
+
+            &:hover,
+            &:focus {
+              background-color: #8dcc86;
+              border-color: #8dcc86;
+              color: #17301d;
+            }
+          }
         }
       }
 
