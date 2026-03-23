@@ -190,10 +190,10 @@
           {%- if entry.website %}
             <a href="{{ entry.website }}" class="btn btn-sm z-depth-0" role="button">Website</a>
           {%- endif %}
-          {% if site.scholar.details_link and entry.title %}
-            <a href="{{ entry.title | publication_details_path | relative_url }}" class="btn btn-sm z-depth-0 publication-details-btn" role="button">{{ site.scholar.details_link }}</a>
-          {% elsif site.scholar.details_link and entry.url %}
-            <a href="{{ entry.url | relative_url }}" class="btn btn-sm z-depth-0 publication-details-btn" role="button">{{ site.scholar.details_link }}</a>
+          {% if site.publication_details_button_text and entry.title %}
+            <a href="{{ entry.title | publication_details_path | relative_url }}" class="btn btn-sm z-depth-0 publication-details-btn" role="button">{{ site.publication_details_button_text }}</a>
+          {% elsif site.publication_details_button_text and entry.url %}
+            <a href="{{ entry.url | relative_url }}" class="btn btn-sm z-depth-0 publication-details-btn" role="button">{{ site.publication_details_button_text }}</a>
           {% endif %}
           </div>
           {% if site.badges %}
