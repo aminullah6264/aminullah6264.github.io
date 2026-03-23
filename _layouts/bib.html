@@ -31,11 +31,7 @@
         <div id="{{entry.key}}" class="col-sm-8">
         <!-- Title -->
         <div class="title">
-          {% if entry.url %}
-            <a href="{{ entry.url | relative_url }}">{{entry.title}}</a>
-          {% else %}
-            {{entry.title}}
-          {% endif %}
+          {{entry.title}}
         </div>
         <!-- Author -->
         <div class="author">
@@ -195,9 +191,9 @@
             <a href="{{ entry.website }}" class="btn btn-sm z-depth-0" role="button">Website</a>
           {%- endif %}
           {% if site.scholar.details_link and entry.title %}
-            <a href="{{ entry.title | publication_details_path | relative_url }}" class="btn btn-sm z-depth-0" role="button">{{ site.scholar.details_link }}</a>
+            <a href="{{ entry.title | publication_details_path | relative_url }}" class="btn btn-sm z-depth-0 publication-details-btn" role="button">{{ site.scholar.details_link }}</a>
           {% elsif site.scholar.details_link and entry.url %}
-            <a href="{{ entry.url | relative_url }}" class="btn btn-sm z-depth-0" role="button">{{ site.scholar.details_link }}</a>
+            <a href="{{ entry.url | relative_url }}" class="btn btn-sm z-depth-0 publication-details-btn" role="button">{{ site.scholar.details_link }}</a>
           {% endif %}
           </div>
           {% if site.badges %}
