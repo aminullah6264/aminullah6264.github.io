@@ -194,7 +194,9 @@
           {%- if entry.website %}
             <a href="{{ entry.website }}" class="btn btn-sm z-depth-0" role="button">Website</a>
           {%- endif %}
-          {% if site.scholar.details_link and entry.url %}
+          {% if site.scholar.details_link and entry.title %}
+            <a href="{{ entry.title | publication_details_path | relative_url }}" class="btn btn-sm z-depth-0" role="button">{{ site.scholar.details_link }}</a>
+          {% elsif site.scholar.details_link and entry.url %}
             <a href="{{ entry.url | relative_url }}" class="btn btn-sm z-depth-0" role="button">{{ site.scholar.details_link }}</a>
           {% endif %}
           </div>
