@@ -1,0 +1,157 @@
+tldr: >
+  Most strong salient-object-detection models lean on a depth channel alongside RGB, which
+  doubles the compute and breaks down when the depth map is noisy. DDNet drops depth entirely and
+  instead uses densely connected deformable convolutions, which adapt their sampling grid to the
+  geometry of the object. With 3.3M parameters it sets the best E-measure and MAE on the SIP
+  benchmark against 22 competing methods. The paper's more interesting result is negative: a
+  purpose-built cross-dataset shows every current model, DDNet included, generalises poorly.
+
+tags:
+  - salient object detection
+  - deformable convolution
+  - DenseNet
+  - RGB-D
+  - generalization
+  - surveillance
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      Salient object detection asks a model to highlight what a human eye would look at first.
+      The field's recent gains have largely come from RGB-D methods, which pair the colour image
+      with a depth map and fuse the two streams — at input, early, late, or at several stages.
+
+      That progress carries two costs. Two-stream fusion architectures are computationally
+      expensive, which limits where they can be deployed. And they inherit the depth sensor's
+      failure modes: when the depth image is noisy or the scene is heavily occluded, RGB-D methods
+      degrade noticeably. Meanwhile RGB-only methods have historically struggled when the object
+      shares texture and colour statistics with a cluttered background.
+
+      There is a third problem the paper treats as its real target. Benchmarks evaluate on a test
+      split drawn from the same dataset as training, which measures interpolation, not robustness.
+      For a surveillance deployment — where lighting, distance and occlusion all shift — that
+      number is close to meaningless.
+
+  - heading: Key idea
+    body: |
+      Standard convolution kernels sample the input on a fixed rectangular grid, so they model
+      geometric transformations (pose, scale, viewpoint) only by memorising many augmented
+      examples. **Deformable convolutions** learn per-location offsets to that sampling grid,
+      letting the receptive field bend around the actual shape of the object. The paper's bet is
+      that this is exactly what separates foreground from background under the transformations
+      that break RGB-only SOD.
+
+      The twist is *densely* deformable: rather than stacking deformable layers in sequence, DDNet
+      wires three of them with dense connections. The ablation is direct — three plain deformable
+      convolutions produce coarse maps with rough edges; densely connecting them gives the best
+      result in the paper. Deformable layers are expensive relative to regular ones, so the design
+      deliberately uses only three of them rather than making the whole network deformable.
+
+  - heading: How the method works
+    body: |
+      DDNet has three blocks.
+
+      **1. Dense feature blocks.** Two densely populated blocks, inspired by DenseNet, extract
+      low-level edge and shape features. Each contains 1x1 and 3x3 convolutions with max-pooling
+      and batch normalisation between them; a transition layer with a single 1x1 convolution and
+      stride-2 average pooling reduces resolution before the second block, which uses 12
+      convolutional layers per kernel size. Dilated and grouped convolutions were tried here first
+      and did not extract fine enough detail.
+
+      **2. Densely deformable block.** Three deformable convolutions with dense interconnections
+      refine the salient regions and their boundaries.
+
+      **3. Transpose convolution decoder.** Three transpose convolutions and two upsampling layers
+      bring the map back to input resolution as a single-channel saliency image. Bilinear
+      interpolation in the transpose convolutions performs the edge smoothing that methods relying
+      on plain upsampling skip.
+
+      Training used ADAM at a base learning rate of 1e-4, MSE loss, batch size 16, 500 epochs, and
+      224x224 inputs — about three hours on one RTX 2070 SUPER. Dense blocks were initialised from
+      ImageNet-pretrained DenseNet weights.
+
+  - heading: The generalization result
+    body: |
+      To test robustness properly the authors built **S-SOD**, a small cross-dataset of 70
+      high-resolution surveillance images at 512x512, most drawn from the Chokepoint dataset and
+      the rest captured by the authors. It targets the cases benchmarks avoid: subjects far from
+      the camera, multiple occluded people, strong lighting variation, varied poses and distances.
+      Masks were annotated in MATLAB by an unbiased annotator and checked by two computer vision
+      experts.
+
+      The results are sobering. On SIP, DDNet reaches 0.935 E-measure and 0.043 MAE. On S-SOD the
+      same model scores 0.595 E-measure and 0.108 MAE, and every baseline collapses further —
+      ENet reaches 0.254 E-measure with 0.900 MAE. The paper's conclusion is that current SOD
+      models, including its own, have limited generalization potential, and that this deserves
+      more attention than another point of benchmark accuracy.
+
+  - heading: Ablations
+    body: |
+      Two ablation axes are reported. On **backbone**: EfficientNet is cheapest but produces
+      saliency maps that match ground truth poorly; VGG16's first two convolutional blocks are the
+      strongest alternative (0.916 E-measure); densely connected convolutions still win overall.
+      On **loss**: MSE is used in the final model, with BCE and an SSIM-negation loss both
+      substantially worse — SSIM in particular collapses to 0.506 E-measure on VGG16.
+
+      Removing the dense deformable connections (`DDNet w/o DD`) costs 1.8 points of E-measure and
+      raises MAE from 0.043 to 0.050 at identical parameter count, which is the cleanest evidence
+      for the paper's central claim.
+
+contributions:
+  - >-
+    Showed that densely connected deformable convolutions can match or beat RGB-D methods on
+    salient object detection while using only the RGB channel.
+  - >-
+    Achieved the best E-measure (0.935) and lowest MAE (0.043) on SIP against 22 competing
+    methods, with 3.3M parameters and 35-47ms per image.
+  - >-
+    Built and released S-SOD, a surveillance cross-dataset designed specifically to measure
+    generalization rather than in-distribution accuracy.
+  - >-
+    Documented that all evaluated models — including DDNet — degrade sharply on S-SOD, framing
+    cross-dataset generalization as the open problem in the field.
+
+datasets:
+  - name: SIP (Salient Person)
+    note: >-
+      929 challenging images with ground-truth masks and depth maps; standard training/testing
+      split followed for comparison against 22 methods. DDNet ignores the depth channel.
+  - name: S-SOD (Surveillance SOD) — introduced here
+    note: >-
+      70 high-resolution 512x512 surveillance images with expert-verified binary masks, built as a
+      cross-dataset test of generalization. Mostly sourced from Chokepoint plus author-captured
+      images.
+
+results:
+  caption: >-
+    Performance on SIP (higher is better except MAE) and the same models on the S-SOD
+    cross-dataset. The gap between the two tables is the paper's main finding.
+  columns: [Dataset, Model, E-measure, S-measure, F-measure, MAE]
+  rows:
+    - ["SIP", "UCNet", "0.927", "0.883", "0.877", "0.045"]
+    - ["SIP", "DDNet (w/o dense deformable)", "0.917", "0.844", "0.785", "0.050"]
+    - ["SIP", "DDNet (full)", "0.935", "0.863", "0.813", "0.043"]
+    - ["S-SOD", "ENet (BCE)", "0.254", "0.061", "0.087", "0.900"]
+    - ["S-SOD", "VGG16 (w/ smoothing)", "0.478", "0.305", "0.112", "0.402"]
+    - ["S-SOD", "DDNet (dilated)", "0.576", "0.501", "0.167", "0.085"]
+    - ["S-SOD", "DDNet (full)", "0.595", "0.488", "0.176", "0.108"]
+
+limitations:
+  - >-
+    DDNet wins on E-measure and MAE but not on S-measure or F-measure, where some RGB-D methods
+    remain ahead. The paper's argument is efficiency and single-modality input, not a clean sweep.
+  - >-
+    Generalization remains poor in absolute terms. Scoring 0.595 E-measure on S-SOD after 0.935 on
+    SIP means the model is not deployable on unseen surveillance footage as-is.
+  - >-
+    S-SOD has only 70 images, which the authors acknowledge — it diagnoses the problem rather than
+    providing enough data to train against it.
+  - >-
+    Stacking more deformable layers would likely improve representation but was ruled out on
+    efficiency grounds, so the accuracy ceiling of the approach is untested.
+
+related:
+  - Multiview summarization and activity recognition meet edge computing in IoT environments
+  - "SD-Net: Understanding overcrowded scenes in real-time via an efficient dilated convolutional neural network"
+  - Efficient image recognition and retrieval on IoT-assisted energy-constrained platforms from big data repositories
+  - "Deep-ReID: Deep features and autoencoder assisted image patching strategy for person re-identification in smart cities surveillance"

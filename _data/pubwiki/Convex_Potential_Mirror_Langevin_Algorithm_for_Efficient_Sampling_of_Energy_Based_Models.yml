@@ -1,0 +1,197 @@
+tldr: >
+  Sampling from an energy-based model with Langevin dynamics gets stuck in local energy minima
+  because the sampler moves through Euclidean space while the data lives on a curved manifold.
+  Mirror Langevin methods fix the geometry with a fixed, hand-picked mirror map. CPMLA instead
+  learns the mirror map from data as the gradient of a convex potential, and trains it jointly with
+  the EBM. It beats CoopFlow on CIFAR-10 FID (20.85 vs 21.16) using 20 sampling steps instead of
+  30 — and 0.9% of the flow parameters.
+
+tags:
+  - energy-based models
+  - MCMC
+  - Langevin dynamics
+  - mirror descent
+  - optimal transport
+  - normalizing flows
+  - generative models
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      An energy-based model defines a density as $$p_\theta(x) = \frac{1}{Z(\theta)}\exp[f_\theta(x)]$$
+      — low energy for likely data, high energy for unlikely. This is appealing because it demands
+      almost nothing architecturally: you specify an unnormalised energy function and nothing else.
+      No invertibility requirement, no tractable noise process. That flexibility is why EBMs turn up
+      in 3D object recognition, image segmentation, super-resolution, machine translation and
+      protein folding.
+
+      The cost is sampling. Because $$Z(\theta)$$ is intractable, training and generation both need
+      MCMC, and in high dimensions Langevin dynamics runs into two failure modes: it gets trapped in
+      local minima when the energy landscape is multi-modal, and it treats the space as Euclidean
+      when the data manifold is not. The result is expensive, biased sampling and slow convergence.
+
+      **Mirror Langevin algorithms** address the geometry directly. By running the dynamics in a
+      dual space defined by a mirror map, they achieve vanishing bias as step size goes to zero and
+      mixing times independent of the domain's condition number. But the mirror map is *fixed* — a
+      predefined function chosen in advance. For the complex manifolds that deep EBMs are meant to
+      model, no hand-picked map fits, which has kept these methods off large-scale problems.
+
+  - heading: Key idea
+    body: |
+      Learn the mirror map instead of choosing it.
+
+      The map is parameterised as the **gradient of a convex potential**, following a **CP-Flow**.
+      This is not an arbitrary choice: by Brenier's theorem in optimal transport, the gradient of a
+      convex potential is exactly the structure of an optimal transport map between distributions,
+      which guarantees the learned map captures the geometry of the data distribution rather than
+      merely being flexible.
+
+      Because the map is learned from data, it reorients the sampling trajectory to follow the
+      manifold's actual non-Euclidean geometry — exploring high-density regions while avoiding the
+      metastable states where Euclidean Langevin dynamics stalls.
+
+      The second idea is **cooperative training**. The CP-Flow and the EBM improve each other: the
+      CP-Flow is trained on both real and synthesised examples, then the EBM is updated by
+      contrasting real samples against those CPMLA generated. The flow's transport dynamics and the
+      EBM's density estimate converge together, which both reduces sampling bias and speeds
+      convergence.
+
+  - heading: How the algorithm works
+    body: |
+      Each CPMLA iteration has three stages:
+
+      1. **Initialise in the dual space.** Noise examples are drawn from a standard Gaussian
+         $$\mathcal{N}(0, I)$$ directly in the dual space — so no initial forward mapping is needed.
+      2. **Run T mirror Langevin steps.** In the dual space, alternate a gradient step on the EBM
+         energy with an SDE noise step, with noise drawn from $$\mathcal{N}(0, \nabla^2 G_\vartheta(x_k))$$.
+      3. **Map back.** The inverse map $$\nabla G^*_\vartheta$$ returns samples to the primal space.
+
+      Two computational choices make this tractable. The expensive matrix square root of the Hessian
+      is avoided by noting that $$\sqrt{2\eta \nabla^2 G_\vartheta(x)}\,\tilde\xi_k$$ with standard
+      Gaussian noise is statistically equivalent to $$\sqrt{2\eta}\,\xi_k$$ with noise drawn from the
+      Hessian-covariance Gaussian. And the Hessian is **approximated by its diagonal**, dropping
+      complexity from $$O(d^3)$$ to $$O(d)$$ — the step that makes high-dimensional sampling feasible at
+      all. Successive iterations also let $$\nabla G^*_\vartheta$$ and $$\nabla G_\vartheta$$ cancel,
+      since they are inverses.
+
+      The MCMC chain is re-initialised at every update rather than persisted, following Persistent
+      Contrastive Divergence practice, so gradients are estimated from the current model
+      distribution rather than stale samples.
+
+  - heading: Theoretical analysis
+    body: |
+      The paper proves exponential convergence with vanishing bias under relaxed log-concavity, and
+      describes this as the first convergence analysis of mirror Langevin algorithms where the
+      mirror map is a deep neural network.
+
+      Two extensions over prior analysis: the proof is specialised to a neural-network mirror map,
+      and it accounts for the **approximation error of both** the CP-Flow and the EBM, not just the
+      sampling algorithm's own error.
+
+      The assumptions are handled with unusual care. **Assumption 4.1** (β-Mirror Log-Sobolev
+      Inequality) is acknowledged as unverifiable for real high-dimensional data — the paper states
+      plainly that it is standard and necessary in this literature, and that its own contribution
+      concerns what can be controlled and verified. **Assumption 4.2** (ζ-self-concordance, bounding
+      the third derivative relative to the second so the geometry cannot change too abruptly) is
+      **empirically validated** on CIFAR-10: since computing the third-derivative tensor directly is
+      infeasible, Frobenius norms of the Hessian and of five random directional third derivatives are
+      estimated with Hutchinson's estimator via Hessian-vector products, giving a proxy for ζ.
+
+  - heading: Experiments
+    body: |
+      **Toy study.** On the eight-Gaussians density, CPMLA matches in **3 iterations** what CP-Flow
+      needs 10 iterations to reach.
+
+      **Image generation.** Evaluated on CIFAR-10, SVHN and CelebA, all resized to 32x32, with FID
+      over 50,000 samples. Two settings are reported: CPMLA (both components from scratch) and
+      CPMLA-prt (CP-Flow pretrained on data first, then used to initialise).
+
+      On CIFAR-10, CPMLA-prt reaches **20.85** at T=20 and CPMLA **21.09** at T=30, against
+      CoopFlow's 30.74 at T=20 and 21.16 at T=30. Against Flow+EBM baselines the gap is large —
+      NT-EBM sits at 78.12 and EBM-FCE at 37.30.
+
+      The paper is explicit that beating score-based diffusion is not the goal. NCSN++ reaches 2.20
+      and StyleGAN2-ADA 2.92, both far ahead. The argument is that EBMs buy modelling flexibility —
+      you only specify an unnormalised energy — and that this work narrows the sample-quality gap
+      enough to make that flexibility practical.
+
+      **Efficiency** is where the result is strongest:
+
+      - Lower FID than CoopFlow with **fewer sampling steps** (20 vs 30) and less wall-clock time
+        (15.92 vs 16.84 s per 1k images).
+      - The flow component uses **0.26M parameters against CoopFlow's 28.78M** — 0.9% — while the
+        EBM part is identical at 17.13M.
+      - Training within a 24GB VRAM budget takes **10.5 hours versus roughly 38** for CoopFlow.
+        Per-iteration CPMLA is actually *slower* (15.7 s/iter vs 12.0), because CP-Flow is a more
+        complex architecture; the advantage comes entirely from memory efficiency permitting larger
+        batches.
+
+      **Reconstruction and inpainting.** CPMLA reconstructs CIFAR-10 test images with high fidelity,
+      and inpaints masked CelebA faces by optimising an energy that measures difference over the
+      masked region while constraining undamaged pixels to stay fixed.
+
+contributions:
+  - >-
+    Introduced CPMLA, which replaces the fixed mirror map of conventional mirror Langevin algorithms
+    with a learnable one parameterised as the gradient of a convex potential, justified by Brenier's
+    theorem.
+  - >-
+    Trained the mirror map and the EBM cooperatively, so the flow's transport dynamics and the
+    energy-based density estimate improve each other rather than being fit independently.
+  - >-
+    Gave the first convergence analysis of mirror Langevin algorithms with deep-network mirror maps,
+    proving exponential convergence with vanishing bias while accounting for the approximation error
+    of both learned components.
+  - >-
+    Achieved better sample quality than CoopFlow with fewer sampling iterations, less inference
+    time, and 0.9% of the flow parameter count.
+
+datasets:
+  - name: Eight Gaussians (toy)
+    note: Synthetic multi-modal density used to show convergence speed against CP-Flow.
+  - name: CIFAR-10
+    note: 50,000 training and 10,000 test images across 10 categories; main FID benchmark.
+  - name: SVHN
+    note: Over 70,000 training and 20,000 test images of house numbers.
+  - name: CelebA
+    note: Over 200,000 celebrity face images; also used for the inpainting demonstration.
+
+results:
+  caption: >-
+    FID on CIFAR-10 (50k samples, 32x32). CPMLA is compared primarily against EBM and Flow+EBM
+    methods; diffusion and GAN results are shown for context, not as the target.
+  columns: [Model class, Model, FID]
+  rows:
+    - ["VAE", "VAE", "78.41"]
+    - ["Flow+EBM", "NT-EBM", "78.12"]
+    - ["Autoregressive", "PixelCNN", "65.93"]
+    - ["Flow", "Glow", "45.99"]
+    - ["EBM", "EBM-IG", "38.20"]
+    - ["Flow+EBM", "EBM-FCE", "37.30"]
+    - ["EBM", "CoopNets", "33.61"]
+    - ["Flow+EBM", "CoopFlow (T=30)", "21.16"]
+    - ["Flow+EBM", "CPMLA (T=30)", "21.09"]
+    - ["Flow+EBM", "CPMLA-prt (T=20)", "20.85"]
+    - ["Score-based (context)", "NCSN++", "2.20"]
+
+limitations:
+  - >-
+    The β-Mirror LSI assumption underpinning the convergence proof cannot be verified for real
+    high-dimensional data; the paper states this directly rather than claiming otherwise.
+  - >-
+    The Hessian of the learned potential is approximated by its diagonal to make sampling
+    affordable, discarding the off-diagonal curvature the mirror map was introduced to capture.
+  - >-
+    FID remains an order of magnitude behind score-based diffusion (20.85 vs 2.20 for NCSN++). The
+    contribution is efficiency within the EBM family, not competitive image quality overall.
+  - >-
+    Per-iteration training is slower than CoopFlow; the reported speed advantage depends on memory
+    headroom allowing larger batches, so it is hardware-dependent.
+  - >-
+    All image experiments are at 32x32 resolution, leaving scaling behaviour untested.
+  - >-
+    The best FID comes from the pretrained variant (CPMLA-prt), so the strongest result depends on a
+    separate CP-Flow pretraining stage rather than fully joint training from scratch.
+
+related:
+  - "CVAE-SM: A Conditional Variational Autoencoder with Style Modulation for Efficient Uncertainty Quantification"

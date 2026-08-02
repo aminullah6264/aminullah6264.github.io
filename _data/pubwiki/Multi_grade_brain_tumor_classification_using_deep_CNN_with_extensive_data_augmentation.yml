@@ -1,0 +1,144 @@
+tldr: >
+  Most brain-tumour CAD systems answer a binary question — benign or malignant — which is not the
+  question a radiologist needs answered. This paper classifies MRI into all four WHO malignancy
+  grades. The obstacle is data: the Radiopaedia set has 121 images in total. Eight augmentation
+  techniques across 30 parameter settings turn each image into 30, lifting overall accuracy from
+  87.38% to 90.67%.
+
+tags:
+  - medical imaging
+  - brain tumour
+  - MRI
+  - data augmentation
+  - VGG-19
+  - transfer learning
+  - computer-aided diagnosis
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      The WHO grades tumours of the central nervous system from I (benign) to IV (highly
+      malignant), with grade IV glioblastomas carrying the worst prognosis. Grading normally
+      requires histopathology — looking for necrosis, microvascular proliferation and vascular
+      thrombosis — but those features are not always clear, and pathologists disagree about them.
+      MRI offers a route to the same distinction without surgery, using contrasts that separate
+      low-grade glioma from glioblastoma.
+
+      Computer-aided diagnosis systems built on MRI had three problems the paper sets out to fix.
+      Most were **binary** — benign versus malignant — which leaves a radiologist without the
+      information needed to choose a treatment. Public **data is scarce** for individual grades.
+      And reported **accuracy was not yet convincing** for clinical use.
+
+      The framing matters: the system is proposed as a second opinion supporting a radiologist
+      after clinical examination, not as a replacement for one.
+
+  - heading: How the method works
+    body: |
+      Three stages.
+
+      **1. Tumour segmentation.** InputCascadeCNN handles segmentation. Its distinguishing feature
+      is two-pathway processing: a 7x7 receptive field stream extracting local features alongside a
+      13x13 stream for global context, with a final layer that implements the fully connected layer
+      convolutionally — reported as roughly 40x faster than comparable models. Before the local
+      pathway, N4ITK bias correction suppresses intensity extremes; before the global pathway, each
+      channel is normalised by subtracting its mean and dividing by its standard deviation.
+      Afterwards, connected-component labelling removes flat blobs that the bright skull margin
+      would otherwise leave looking like tumour tissue.
+
+      **2. Extensive data augmentation.** Eight techniques split into two purposes:
+
+      - *Geometric invariance* — rotation (-90, -45, 45, 90 degrees), flips (top, bottom, left,
+        right), skew (left, right, forward, backward), shear (10 degrees on X and Y).
+      - *Noise invariance* — Gaussian blur (sigma 0.25 to 2.0), sharpening (lightness 0.5 to 2.0),
+        edge detection (alpha 0.25 to 1.0), emboss (strength 0.5 to 2.0).
+
+      Thirty parameter settings in total turn each MR image into 30 samples. Radiopaedia goes from
+      121 images to 3,630; the brain tumour dataset from 3,064 to 91,920.
+
+      **3. Classification.** VGG-19 is fine-tuned on the segmented, augmented tumour regions. The
+      architectural argument for VGG-19 is specific to the domain: it uses 3x3 kernels with stride 1
+      throughout, where contemporaries used 11x11 or 7x7 kernels with strides of 4-5 in early
+      layers. Large strides skip over exactly the fine texture that distinguishes one tumour grade
+      from the next. Only the fully connected layer weights are updated; the 1,000-dimensional FC8
+      output feeds a SoftMax classifier over the four grades.
+
+  - heading: Accuracy before and after augmentation
+    body: |
+      Data was split 50% training / 25% validation / 25% testing, with each dataset evaluated both
+      before and after augmentation so the augmentation effect is isolated.
+
+      On **Radiopaedia**, overall accuracy rises from 87.38% to 90.67%. Every grade improves, with
+      the largest gain on grade I (90.03% to 95.54%) and the smallest on grade IV (85.50% to
+      86.71%).
+
+      On the **brain tumour dataset** (3,064 T1-weighted contrast-enhanced images from 233
+      patients, 512x512 at 0.49mm pixel size), sensitivity rises from 84.51% to 88.41% and
+      specificity from 93.34% to 96.12%.
+
+      The residual confusion is clinically coherent rather than random. Grades III and IV are what
+      get mixed up — before augmentation, 7.16% of grade III cases read as grade IV and 9.35% of
+      grade IV as grade III. These are adjacent grades of the same glioma lineage, distinguished
+      histologically by features that are subtle on MRI, and they remain the hardest pair after
+      augmentation too.
+
+contributions:
+  - >-
+    Presented what the authors describe as the first CAD system to classify brain tumours into all
+    four WHO grades, rather than the binary benign/malignant split used in prior work.
+  - >-
+    Addressed MRI data scarcity with a structured augmentation scheme covering both geometric and
+    noise invariance, expanding each sample 30-fold and improving accuracy by 3.3 points.
+  - >-
+    Argued and demonstrated that small 3x3 kernels at stride 1 matter for this task specifically,
+    because tumour grade is signalled by fine texture that large-stride architectures skip.
+  - >-
+    Reported before-and-after results on two datasets so the contribution of augmentation is
+    separable from that of the architecture.
+
+datasets:
+  - name: Radiopaedia
+    note: >-
+      121 MR images labelled by WHO grade — 36 grade I meningiomas, 32 grade II gliomas, 25 grade
+      III gliomas, 28 grade IV glioblastomas. Expanded to 3,630 by augmentation.
+  - name: Brain tumour dataset (Cheng et al.)
+    note: >-
+      3,064 T1-weighted contrast-enhanced images from 233 patients at 512x512, 0.49mm pixels, 6mm
+      slices — 708 meningioma, 1,426 glioma, 930 pituitary. Expanded to 91,920.
+
+results:
+  caption: >-
+    Per-grade accuracy on Radiopaedia before and after augmentation, and overall
+    sensitivity/specificity on the brain tumour dataset.
+  columns: [Dataset, Measure, Before augmentation, After augmentation]
+  rows:
+    - ["Radiopaedia", "Grade I", "90.03%", "95.54%"]
+    - ["Radiopaedia", "Grade II", "89.91%", "92.66%"]
+    - ["Radiopaedia", "Grade III", "84.11%", "87.77%"]
+    - ["Radiopaedia", "Grade IV", "85.50%", "86.71%"]
+    - ["Radiopaedia", "Overall accuracy", "87.38%", "90.67%"]
+    - ["Brain tumour", "Sensitivity", "84.51%", "88.41%"]
+    - ["Brain tumour", "Specificity", "93.34%", "96.12%"]
+
+limitations:
+  - >-
+    Augmentation multiplies samples but not information. With 121 source images on Radiopaedia,
+    train and test augmentations derive from the same small pool of patients, so the reported gain
+    reflects invariance to transformation rather than exposure to genuinely new cases.
+  - >-
+    Grades III and IV remain the dominant confusion — precisely the boundary that matters most
+    clinically, since it separates anaplastic glioma from glioblastoma.
+  - >-
+    The two datasets are labelled differently: Radiopaedia by WHO grade, the brain tumour dataset
+    by tumour type (meningioma, glioma, pituitary), so the two evaluations are not directly
+    comparable and only the first tests the four-grade claim.
+  - >-
+    Only the fully connected layers are fine-tuned, leaving the convolutional features shaped
+    entirely by natural images rather than by MRI.
+  - >-
+    No prospective or cross-institution validation is reported, so performance on scanners and
+    protocols outside these datasets is unknown.
+
+related:
+  - Efficient image recognition and retrieval on IoT-assisted energy-constrained platforms from big data repositories
+  - Integrating salient colors with rotational invariant texture features for image representation in retrieval systems
+  - Densely deformable efficient salient object detection network

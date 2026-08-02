@@ -1,0 +1,163 @@
+tldr: >
+  Anomaly recognition has to run at the edge, where a delayed alert is worthless — but the deep
+  models that do it well are 500MB+. This paper pairs MobileNetV2 features with an LSTM that
+  borrows two ideas from elsewhere: residual connections between recurrent layers, and a
+  self-attention layer over the frame sequence. The result is a 12.8MB model with 3.3M parameters
+  that processes 30 frames in 0.263s and still improves accuracy on all three benchmarks.
+
+tags:
+  - anomaly detection
+  - LSTM
+  - attention
+  - MobileNetV2
+  - residual connections
+  - edge computing
+  - surveillance
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      Most deployed surveillance cameras only record. The footage accumulates faster than anyone
+      can review it, and an analyst waiting for an anomalous event to appear will usually be looking
+      elsewhere when it does.
+
+      Automating this is unusually hard, for reasons that are structural to the task:
+
+      - **The definition of anomaly is subjective**, and varies by context.
+      - **Annotated data is scarce**, because anomalous events are by definition rare.
+      - **Surveillance video is low resolution.**
+      - **Intra-class and inter-class variation is large** — two robberies look nothing alike.
+
+      Three learning strategies have been tried, each with a specific problem. **Supervised**
+      methods need examples of every anomaly type, but anomalies are unbounded and unenumerable, and
+      the resulting models only work on the specific scenes they were designed around. **One-class
+      / semi-supervised** methods train only on normal video and flag deviations — but no dataset
+      can contain every normal behaviour, so unusual-but-normal events generate false alarms.
+      **Unsupervised** methods need no labels but have the least to work with. Frame-level
+      annotation is expensive enough that weakly supervised video-level labels have become the
+      common compromise.
+
+      Layered on top is a deployment constraint the paper treats as first-class: in anomaly
+      recognition, a delayed response costs lives and property, so a model that cannot run at the
+      edge node is not a solution regardless of its accuracy.
+
+  - heading: Key idea
+    body: |
+      Three components, each chosen against the efficiency constraint.
+
+      **MobileNetV2 for spatial features.** Depthwise separable convolutions replace expensive
+      standard convolutions; 17 bottleneck residual blocks with a projection layer that compresses
+      to few channels; ReLU6 activations throughout. The top classification layer is removed and the
+      network used as a frozen feature extractor. At **3.1 MFLOPs**, MobileNetV2 contributes almost
+      nothing to the compute budget while matching heavyweight CNNs on feature quality.
+
+      **Residual connections inside the LSTM.** The residual-learning idea that lets very deep CNNs
+      train — learning a residual function relative to the input rather than a fresh mapping — is
+      applied to the recurrent stack. This eases the dynamic hidden state, normalises information
+      flow across layers, and mitigates vanishing gradients. Dropout of 0.5 is applied in each
+      residual LSTM layer before the forward connections.
+
+      **Self-attention over the sequence.** Adapted from encoder-decoder video captioning work, a
+      self-attention layer weights frame features by their latent correlation across positions,
+      handling short- and long-term dependencies together rather than relying on recurrence alone.
+
+  - heading: Ablation — which component earns its place
+    body: |
+      The paper builds up the architecture incrementally on all three datasets, which makes the
+      contribution of each part legible.
+
+      On **UMN**, plain MobileNetV2+LSTM reaches 86% AUC; adding bidirectionality gives 88%; the
+      residual LSTM jumps to 96%; adding attention reaches 98%. On **Avenue** the pattern repeats —
+      91%, 94%, 94%, 98%. Residual connections deliver the large gain, attention a consistent
+      further two points.
+
+      **UCF-Crime is the interesting case.** AUC goes 88% → 87% → 95% → 96%, but the recall and
+      precision figures swap character: residual LSTM alone gives 91% recall at 78% precision, while
+      the full model gives 78% recall at 87% precision. F1 is essentially unchanged (82% versus
+      81%). On the hardest dataset, attention rebalances the model toward fewer false alarms rather
+      than raising overall performance — a reasonable trade for a system that alerts a police
+      station, but it is a trade, not a free gain.
+
+  - heading: Accuracy and efficiency
+    body: |
+      Accuracy improves over prior work by 1.77 points on UCF-Crime (78.43% versus DEARESt's
+      76.66%), 0.76 on UMN (98.20% versus 97.44%), and 8.62 on Avenue (98.80% versus 90.18%).
+
+      The efficiency comparison is where the margin is large. At **12.8 MB and 3.3M parameters**,
+      the model is roughly 41x smaller than VGG-16 (528 MB, 138M parameters) and 93x smaller than
+      DEARESt (1,187.5 MB, 305M parameters) — while being more accurate than both. Total cost is
+      618.3 MFLOPs, of which MobileNetV2 accounts for 3.1 and the attention-LSTM 615.
+
+      That split is worth noting: the sequence model, not the CNN, consumes essentially the entire
+      compute budget.
+
+      The 78.43% on UCF-Crime should be read in context. It covers 13 real-world anomaly types
+      across 1,900 long untrimmed videos, with temporal annotation available only for the test set —
+      a far harder problem than the near-saturated UMN and Avenue benchmarks.
+
+contributions:
+  - >-
+    Built an anomaly recognition model small enough for edge deployment — 12.8 MB against 528 MB
+    for VGG-16 — without giving up accuracy against much larger models.
+  - >-
+    Applied residual connections between LSTM layers, which accounts for the largest single
+    accuracy gain in the ablation across all three datasets.
+  - >-
+    Added a self-attention layer over frame features so the model exploits correlations between
+    distant positions rather than depending on recurrence alone.
+  - >-
+    Reported a full ablation (LSTM, BD-LSTM, residual LSTM, residual+attention) on every dataset,
+    making each component's contribution separately visible.
+
+datasets:
+  - name: UCF-Crime
+    note: >-
+      1,900 long untrimmed videos covering 13 real-world anomalies — fighting, stealing, shooting,
+      shoplifting, robbery, road accident, arson, abuse, arrest, assault, burglary, vandalism,
+      explosion. Training has 800 normal and 810 anomalous videos; testing 150 normal and 140
+      anomalous, and only the test set is temporally annotated.
+  - name: UMN (University of Minnesota)
+    note: 11 video sequences across three scenes — plaza, indoor and lawn — totalling 4,144, 2,144
+      and 1,453 frames respectively.
+  - name: Avenue
+    note: 16 training and 21 testing videos, 30,652 frames total at 360x640, containing 47 abnormal
+      events.
+
+results:
+  caption: >-
+    Ablation over sequence models (AUC %) and final accuracy against prior work. Residual
+    connections drive the main gain; attention adds a consistent further improvement.
+  columns: [Model, UCF-Crime AUC, UMN AUC, Avenue AUC]
+  rows:
+    - ["MobileNetV2 + LSTM", "88", "86", "91"]
+    - ["MobileNetV2 + BD-LSTM", "87", "88", "94"]
+    - ["MobileNetV2 + residual LSTM", "95", "96", "94"]
+    - ["MobileNetV2 + residual attention LSTM", "96", "98", "98"]
+    - ["— Accuracy: best prior work", "76.66 (DEARESt)", "97.44 (Al-Dhamari)", "90.18 (Cheoi)"]
+    - ["— Accuracy: proposed model", "78.43", "98.20", "98.80"]
+
+limitations:
+  - >-
+    On UCF-Crime the attention layer trades recall for precision (91% to 78% recall, 78% to 87%
+    precision) rather than improving both — on the hardest dataset the gain is a rebalancing.
+  - >-
+    78.43% on UCF-Crime means roughly one in five real-world anomalies is still misclassified.
+  - >-
+    UMN and Avenue are close to saturated at 98%+, so improvements there say little about
+    real-world performance; UCF-Crime is the only benchmark with room left.
+  - >-
+    Efficiency is reported as model size, parameters and FLOPs on a Titan X. No measurement on
+    actual edge hardware is given, so the edge-deployment claim rests on proxies.
+  - >-
+    The attention-LSTM accounts for 615 of 618.3 MFLOPs, so the lightweight CNN choice optimises
+    the part of the pipeline that was already cheap.
+  - >-
+    Training relies on UCF-Crime's video-level labels with temporal annotation only at test time, so
+    the model learns which videos contain anomalies rather than precisely when they occur.
+
+related:
+  - CNN features with bi-directional LSTM for real-time anomaly detection in surveillance networks
+  - Artificial Intelligence of Things-assisted two-stream neural network for anomaly detection in surveillance Big Video Data
+  - One-shot learning for surveillance anomaly recognition using siamese 3d cnn
+  - Efficient activity recognition using lightweight CNN and DS-GRU network for surveillance applications
+  - Violence detection using spatiotemporal features with 3D convolutional neural network

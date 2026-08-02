@@ -1,0 +1,133 @@
+tldr: >
+  Working out who the lead characters of a film are, from the raw video alone, without scripts,
+  subtitles or a cast list. DeepStar tightens face detection so only clearly-framed faces survive,
+  clusters them with pre-trained face-recognition features and an adaptive clustering algorithm
+  that does not need the number of characters in advance, then reads the leads off an occurrence
+  matrix of who appears in which shot.
+
+tags:
+  - movie analysis
+  - face clustering
+  - character identification
+  - deep features
+  - video semantic analysis
+  - unsupervised learning
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      Characters carry the story of a film, which makes identifying them the first step in almost
+      any semantic analysis of movie data — indexing, summarisation, trailer generation, retrieval.
+      IMDb alone lists millions of titles, and the industry's scale makes automatic content
+      description economically interesting rather than merely academic.
+
+      Existing work splits into two families. **Matching-based** approaches align faces with names
+      pulled from scripts, subtitles or closed captions. They work, but they depend on two
+      modalities being available and aligned, which rules out most real footage. **Cast-list-based**
+      approaches cluster similar faces and let a human name each cluster afterwards, avoiding text
+      processing entirely. DeepStar belongs to this second family.
+
+      The weakness of prior cast-list methods is the representation: they cluster on low-level
+      features, so the same actor under different illumination, scale or pose lands in different
+      clusters. That confines them to simple scenes.
+
+  - heading: Key idea
+    body: |
+      Two observations drive the design.
+
+      First, **a starring character is filmed differently**. Leads appear in close-up, centred and
+      in focus. So rather than detecting every face and then trying to filter, DeepStar treats face
+      detection as part of the problem: it applies constraints that only well-framed faces pass,
+      which removes background extras before clustering ever begins.
+
+      Second, **the number of characters is not known in advance**, and varies scene to scene. Any
+      method requiring a fixed *k* — K-means and its relatives — is the wrong tool. DeepStar uses
+      adaptive clustering that determines the cluster count itself.
+
+  - heading: How the method works
+    body: |
+      **1. Preprocessing.** The video is segmented into shots with a histogram-based method. Faces
+      are detected with a multi-task cascaded network, then filtered by three constraints:
+
+      - *Side pose* — rejected using the five facial landmarks the detector already returns.
+      - *Blur* — the cropped face is convolved with a Laplacian operator and its variance taken as
+        a single scalar; below a threshold of 40, the crop is discarded.
+      - *Size* — faces covering less than 10% of the frame are discarded.
+
+      **2. Deep facial features.** Faces are represented with a pre-trained Deep Face (VGG-Face)
+      CNN, chosen specifically because it was trained on 2.6 million images of 2,622 celebrities
+      rather than on ImageNet's generic object images. The model uses 3x3 kernels with stride and
+      padding of one throughout, with two or three consecutive convolutions between pooling layers.
+      Features are taken from the final **FC_8** layer (2,622-dimensional), on the reasoning that
+      later layers encode the global identity abstraction rather than local texture.
+
+      **3. Clustering.** Deep Adaptive Clustering groups the face features. DAC frames clustering
+      as binary pairwise classification — do these two feature vectors belong together — using
+      cosine distance, which both handles high-dimensional deep features and removes the need to
+      fix the cluster count ahead of time.
+
+      **4. Occurrence matrix and centrality.** Each row of the matrix is a scene, each column a
+      character, so the matrix records who appears where. A character's **centrality** is the count
+      of shots they appear in. Rather than taking the top-k or thresholding — neither generalises
+      across films — the centrality values are sorted descending and the largest gap between
+      adjacent values is taken as the boundary between leads and supporting cast. On *Notting Hill*
+      this cleanly isolates the two leads.
+
+  - heading: Evaluation
+    body: |
+      Seven movies across different genres were used, with IMDb cast listings as ground truth, in
+      three experiments: face detection accuracy, clustering accuracy, and starring-character
+      determination.
+
+      Face detection was evaluated shot-wise rather than frame-wise — because the constraints
+      deliberately reject most faces, counting per-frame detections would measure the wrong thing.
+      Clustering was scored by precision and recall per character cluster, comparing the constrained
+      detection strategy against DP2MFD and the unconstrained cascaded detector; the constraints
+      improve clustering in both.
+
+      Starring-character accuracy weights each correctly identified lead by its centrality value.
+      The paper reports that all leads were correctly confirmed in five of the seven movies. The two
+      failures are instructive: clustering accuracy drops on action films, where fast facial motion
+      and changing illumination degrade the features, and one failure involves a lead playing a spy
+      who wears different masks through the film — an identity that face features cannot be expected
+      to hold together.
+
+contributions:
+  - >-
+    Made face detection selective by design, adding pose, blur and size constraints so that only
+    clearly-framed — and therefore likely starring — faces reach the clustering stage.
+  - >-
+    Used features from a face-trained CNN rather than an ImageNet-trained one for character
+    representation, giving robustness to pose, expression and hairstyle changes within a film.
+  - >-
+    Applied adaptive clustering so the number of characters need not be specified in advance,
+    matching the dynamic nature of movie data.
+  - >-
+    Introduced a centrality-gap rule on the occurrence matrix that decides how many leads a film
+    has, instead of fixing a count or threshold.
+
+datasets:
+  - name: Seven Hollywood feature films
+    note: >-
+      Chosen across genres, with cast details from IMDb as ground truth. Notting Hill is used as
+      the worked example throughout the paper.
+
+limitations:
+  - >-
+    Clustering accuracy falls on action movies, where rapid facial motion and illumination changes
+    degrade the deep features.
+  - >-
+    Identity is assumed to be visually stable. A character in disguise across a film breaks the
+    approach outright, which is one of the two reported failure cases.
+  - >-
+    Clusters are still unnamed. As a cast-list method, DeepStar finds who the leads are but leaves
+    attaching real names to them as a manual step.
+  - >-
+    The evaluation covers seven films, enough to be indicative rather than conclusive, and the
+    blur and size thresholds were set empirically rather than learned.
+
+related:
+  - Personalized movie summarization using deep cnn-assisted facial expression recognition
+  - Efficient image recognition and retrieval on IoT-assisted energy-constrained platforms from big data repositories
+  - Event-oriented 3D convolutional features selection and hash codes generation using PCA for video retrieval
+  - Cloud-assisted multiview video summarization using CNN and bidirectional LSTM

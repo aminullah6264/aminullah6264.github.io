@@ -1,0 +1,156 @@
+tldr: >
+  Automatic movie summaries are one-size-fits-all, which is the wrong shape for a subjective
+  medium. This system lets a viewer ask for a summary by emotion — show me the happy moments —
+  by segmenting the film into shots, keeping only visually salient ones with clear faces, and
+  classifying each character's expression into one of seven emotions. The trick that makes it work
+  is a two-step transfer: train ResNet-50 from scratch on face data first, then fine-tune for
+  expression, lifting KDEF accuracy from 64.8% to 93.7%.
+
+tags:
+  - video summarization
+  - facial expression recognition
+  - transfer learning
+  - ResNet
+  - saliency
+  - movie analysis
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      Movie summarization compresses a feature film into the scenes that matter. The established
+      approaches are **automatic** — fusing motion, contrast, rhythm, character social networks,
+      scripts or subtitles into one canonical summary — and **user-preference based**, which let the
+      viewer steer.
+
+      The paper's argument against automatic summarization is not that it works badly but that the
+      target is ill-posed. Movie taste is subjective, so a single summary that satisfies one viewer
+      will fail another. There is no correct answer to compute.
+
+      What is missing is a control the viewer actually cares about. Prior user-preference systems
+      let people set summary duration, or compared user preferences against movie content at the
+      *feature* level rather than the semantic level. This paper picks **emotion** as the semantic
+      handle: emotional moments are what draw an audience's attention, so letting a viewer request
+      them directly is both meaningful and easy to express.
+
+  - heading: How the method works
+    body: |
+      **1. Entropy-based shot segmentation.** Films are structured video — scenes made of shots,
+      each an uninterrupted camera segment. The paper segments by computing per-frame Shannon
+      entropy over the pixel intensity distribution and cutting where visual content changes
+      sharply. Entropy doubles as an information measure, so the same computation separates
+      informative shots from uninformative ones.
+
+      **2. Saliency filtering.** Each frame's saliency map is reduced to a score — nonzero saliency
+      pixels over total pixels — and averaged across the shot. Shots below a threshold are dropped
+      before any expensive processing happens.
+
+      **3. Face detection with a size constraint.** A multi-task cascaded network detects faces in
+      the surviving shots, keeping only faces occupying at least 15% of the frame. This has two
+      justifications: main characters are filmed in close-up, and expression recognition is
+      unreliable on small faces.
+
+      **4. Facial expression recognition.** Each shot's faces are classified into seven emotions.
+      Because a single frame is a poor proxy for a whole shot, and shots may contain several faces,
+      the most frequently detected emotion becomes the shot's label.
+
+      **5. Summary generation.** The user submits an emotion query; shots labelled with that emotion
+      are concatenated into the summary.
+
+  - heading: The two-step transfer learning result
+    body: |
+      This is the part of the paper with the clearest lesson. Fine-tuning ImageNet-pretrained
+      models on the KDEF expression dataset does not work well — the reported accuracies are 40.7%
+      for MobileNet, 45.4% for SqueezeNet, 46.8% for AlexNet, 52.6% for GoogLeNet and 64.8% for
+      ResNet-50. The diagnosis: expression recognition depends on very small changes within a
+      face, and a model whose features were shaped by 1,000 generic object categories has not
+      learned to represent faces at all.
+
+      The fix is to insert an intermediate task. ResNet-50 is reconfigured for **128x128** inputs
+      (the original 224x224 kernel, stride and padding settings do not transfer) and trained **from
+      scratch** on the VGG-Face dataset — 0.42M training and 0.14M validation images across 2,597
+      identities — for 50 epochs at batch size 64, learning rate 0.01 decayed tenfold every 10
+      epochs. That model reaches 96.82% face identification accuracy. Only then is it fine-tuned on
+      KDEF, for 30 epochs starting at learning rate 0.001, reaching **93.65%** overall.
+
+      The jump from 64.83% to 93.65% is attributable entirely to what the network was pretrained on,
+      not to its architecture or capacity.
+
+  - heading: Evaluation
+    body: |
+      **Objective.** Per-class accuracy on KDEF is above 90% for disgust (96.1%), happy (98.0%),
+      neutral (93.3%) and surprise (97.7%), and below it for afraid (82.3%), angry (88.6%) and sad
+      (87.7%) — the three that are most easily confused with one another in the confusion matrix.
+
+      **Subjective.** Five Hollywood films across genres were summarised: *The Lake House*, *My
+      Blueberry Nights*, *You've Got Mail*, *Salt* and *Notting Hill*. Ten participants aged 20-25
+      watched each film, then rated summaries generated from their own query on three questions —
+      relevance to the query, enjoyability, and informativeness — on a 1-10 scale.
+
+      Results split cleanly by genre. Drama, comedy, romance and fantasy score well; *Salt*, the
+      action film, scores worst, because fast motion blurs faces and makes expression recognition
+      unreliable. *Notting Hill* scores best, being emotionally rich. The emotion statistics tell
+      the same story from another angle: across all five films, neutral dominates, and *Salt* yields
+      only 4 happy shots against 72 sad and 102 neutral.
+
+contributions:
+  - >-
+    Framed movie summarization as an emotion query, letting the viewer request the emotional
+    register they want rather than accepting one automatically-chosen summary.
+  - >-
+    Introduced an entropy-based shot segmentation that simultaneously cuts shots and rates how
+    informative they are, so uninformative shots are excluded before further processing.
+  - >-
+    Showed that a two-step transfer — scratch training on face identity, then fine-tuning for
+    expression — outperforms ImageNet-pretrained fine-tuning by nearly 29 accuracy points on KDEF.
+  - >-
+    Adapted ResNet-50 to 128x128 face inputs rather than reusing 224x224 pretrained weights whose
+    kernel, stride and padding settings do not fit the smaller image.
+
+datasets:
+  - name: VGG-Face
+    note: 2.6M images of ~2.6K celebrities; filtered to 0.42M training and 0.14M validation images
+      over 2,597 identities for the scratch-training stage.
+  - name: KDEF (Karolinska Directed Emotional Faces)
+    note: >-
+      4,900 images of 70 subjects (35 male, 35 female) across seven emotion classes, shot from five
+      angles in two sessions — the pose variety is what makes it transfer to movie footage.
+  - name: Five Hollywood films
+    note: >-
+      The Lake House (105 min, 865 shots), My Blueberry Nights (90 min, 1,009 shots), You've Got
+      Mail (119 min, 1,049 shots), Salt (100 min, 2,339 shots), Notting Hill (124 min, 1,623 shots).
+
+results:
+  caption: >-
+    Expression recognition accuracy on KDEF when fine-tuning different pretrained models, showing
+    the effect of pretraining on face data rather than ImageNet.
+  columns: [Model, Pretraining, KDEF accuracy]
+  rows:
+    - ["MobileNet", "ImageNet", "40.65%"]
+    - ["SqueezeNet", "ImageNet", "45.37%"]
+    - ["AlexNet", "ImageNet", "46.81%"]
+    - ["GoogLeNet", "ImageNet", "52.63%"]
+    - ["ResNet-50 (224x224)", "ImageNet", "64.83%"]
+    - ["ResNet-50 (128x128)", "VGG-Face, from scratch", "93.65%"]
+
+limitations:
+  - >-
+    Performance degrades on action films. Fast motion blurs faces, so both detection and expression
+    recognition suffer — Salt is the clear outlier in the subjective study.
+  - >-
+    The system is visual only. Dialogue, score and sound design carry much of a film's emotional
+    signal and are ignored; fusing aural features is named as future work.
+  - >-
+    Neutral dominates the detected emotion distribution in every test film, so summaries for rarer
+    emotions such as disgust or surprise are assembled from very few shots.
+  - >-
+    Subjective evaluation used ten participants in a narrow age band (20-25), which is a small and
+    unrepresentative sample for a claim about user satisfaction.
+  - >-
+    Emotion is read from the character's face only, not from the emotional effect on the viewer, so
+    a tense scene with impassive characters will not be selected.
+
+related:
+  - "DeepStar: Detecting starring characters in movies"
+  - Cloud-assisted multiview video summarization using CNN and bidirectional LSTM
+  - Multiview summarization and activity recognition meet edge computing in IoT environments
+  - Event-oriented 3D convolutional features selection and hash codes generation using PCA for video retrieval

@@ -1,0 +1,173 @@
+tldr: >
+  Surveillance activity recognition is only useful if it keeps up with the camera. This paper
+  strips cost out of every stage — YOLOv3 to detect people, the MOSSE correlation filter to track
+  them, LiteFlowNet's intermediate layer instead of full optical flow, and a GRU with skip
+  connections instead of a deep LSTM. The result is a 48MB model that processes a second of 30fps
+  video in 0.83s and still tops four of five benchmarks.
+
+tags:
+  - activity recognition
+  - GRU
+  - optical flow
+  - real-time
+  - surveillance
+  - object tracking
+  - lightweight models
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      Abnormal-activity recognition is the point of most surveillance systems — a fight, a theft,
+      an accident is only worth detecting if the alert arrives while it is still happening. That
+      makes latency a correctness requirement, not an optimisation.
+
+      Every established approach fails this test somewhere. **Trajectory methods** depend on
+      hand-crafted optical flow, which is expensive to compute. **Multi-stream 2D networks**
+      duplicate work across appearance and flow branches. **3D CNNs** extract spatio-temporal
+      features directly but can only handle 10-15 frames before the time complexity of extending
+      the third dimension becomes prohibitive, so long activities are out of reach. And **hybrid
+      CNN-plus-LSTM** systems stack an expensive sequence model on top of expensive features.
+
+      The LSTM itself is a specific target. Each layer of a deep LSTM carries three gates and a
+      memory cell, and the per-layer cost compounds — the very structure that makes it good at long
+      sequences makes it unusable at frame rate.
+
+  - heading: Key idea
+    body: |
+      The paper's approach is to find, at each stage of the pipeline, the cheapest component that
+      does not cost accuracy — and then to fix the one place where the cheap choice normally does
+      cost accuracy.
+
+      That place is the recurrent model. A **GRU** has only two gates and no memory cell, making it
+      much cheaper than an LSTM, but the literature consistently finds LSTMs more accurate. Stacking
+      GRU layers to close the gap reintroduces the vanishing-gradient and degradation problems that
+      motivated the LSTM in the first place.
+
+      The fix is borrowed from ResNet: **skip connections between GRU layers**, wiring a lower
+      layer's output into a higher layer's input. This is what makes a deeper GRU trainable. The
+      paper cites loss-landscape visualisation work showing skip connections also keep the loss
+      surface from becoming chaotic, making the optimum easier to reach. The resulting DS-GRU
+      matches deep-LSTM accuracy while running **1.4x faster**.
+
+  - heading: How the method works
+    body: |
+      **1. Human detection.** YOLOv3 with a Darknet-53 backbone at 320x320, fine-tuned on two
+      combined surveillance datasets so it holds up across poses, scales and lighting. Darknet-53
+      is chosen on a throughput argument: at 78 FPS it is roughly twice as fast as ResNet-152 for
+      equivalent accuracy (77.2 vs 77.6 Top-1) and beats ResNet-101 on both. The fine-tuned detector
+      reaches 32.56 mAP at about 22ms per frame.
+
+      **2. Tracking.** Once a person is detected, the MOSSE correlation filter tracks them through
+      the stream. MOSSE is robust to illumination change, scale, pose and abrupt movement, and
+      crucially costs almost nothing — the paper shows it keeping a pedestrian tracked even when
+      half the body is occluded by a door.
+
+      **3. Pyramidal flow features.** Instead of computing optical flow, the method taps
+      **LiteFlowNet** — 30x smaller and 1.36x faster than comparable flow networks — at an
+      intermediate layer. Specifically `conv1_D1_L6`, chosen because it sits directly after the
+      correlation layer that performs multiplicative patch comparison between the two frames'
+      feature pyramids, so it already encodes motion. Its feature maps are 128 channels of 10x8; a
+      10x1 average pooling kernel reduces each map to 8 values, giving a **1,024-dimensional**
+      descriptor per frame pair. Fifteen time steps cover one second of video.
+
+      **4. DS-GRU classification.** The feature sequence drives the skip-connected GRU stack, which
+      outputs an activity label and confidence score. Training ran for 200 epochs at learning rate
+      0.01, reduced tenfold after 50 epochs, on a 12GB GeForce Titan X using Caffe and TensorFlow.
+
+  - heading: Benchmark performance
+    body: |
+      Across five benchmarks the method takes first place on four — UCF-101 (95.5%), UCF-50
+      (95.2%), Hollywood2 (71.3%) and YouTube Actions (97.17%) — and second on HMDB51 (72.3%,
+      behind VideoLSTM's 73.3%).
+
+      The gains are small in absolute terms; on UCF-101 the improvement over relational LSTM and
+      3D-CNN-plus-hierarchical-LSTM is 0.7 points. The argument is that this parity is achieved at
+      a fraction of the cost, which is the point of the paper.
+
+      AUC values are 0.956 (HMDB51), 0.971 (UCF-101), 0.966 (UCF-50), 0.944 (Hollywood2) and 0.988
+      (YouTube Actions). Precision and recall stay balanced across all five, though F1 falls to
+      60.73% on HMDB51 and 65.79% on Hollywood2 — both datasets where some individual classes score
+      below 50%, against above-80% average class accuracy on UCF-101, UCF-50 and YouTube Actions.
+
+  - heading: Where the time goes
+    body: |
+      The per-stage breakdown for one second of video is worth reading, because it shows the
+      optimisation is uneven:
+
+      - Human detection: 85 ms
+      - MOSSE tracking: 103 ms
+      - Feature extraction: 630 ms
+      - Activity classification: 205 ms
+
+      Feature extraction dominates at roughly three quarters of the total, despite LiteFlowNet
+      already being the cheap option — motion representation, not sequence modelling, is the real
+      bottleneck. Total is 0.83 s per second of 30fps video, against 1.068 s for ML-LSTM with
+      FlowNet2 features and 1.31 s for a deep autoencoder with QSVM.
+
+      All timings are GPU-only. The paper is explicit that no CPU comparison was run for its own
+      model because the architecture uses special convolutional layers with no CPU implementation —
+      while noting the baselines take 5.4 s and 13 s respectively on CPU.
+
+contributions:
+  - >-
+    Fine-tuned a lightweight detector on surveillance data specifically, since detectors trained on
+    general object categories do not localise people reliably in surveillance conditions.
+  - >-
+    Extracted pyramidal convolutional features from an intermediate LiteFlowNet layer rather than
+    computing optical flow, capturing both large and small displacements at a fraction of the cost.
+  - >-
+    Introduced DS-GRU, adding ResNet-style skip connections between GRU layers so a deeper GRU
+    stack trains without degradation — LSTM-level accuracy at 1.4x the speed.
+  - >-
+    Delivered the whole pipeline at 48 MB, small enough to embed in a vision sensor, against
+    321 MB for C3D and 193 MB for a comparable ML-LSTM system.
+
+datasets:
+  - name: UCF-101
+    note: 13,320 clips across 101 categories; the standard large-scale action recognition benchmark.
+  - name: UCF-50
+    note: 50 action categories, the predecessor of UCF-101.
+  - name: HMDB51
+    note: 51 activity classes drawn from 1,697 distinct sources — the hardest of the five here.
+  - name: Hollywood2 Actions
+    note: Activity clips extracted from 69 Hollywood films, with cinematic camera work and editing.
+  - name: YouTube Actions
+    note: 11 categories with 25 subjects; small but heavy on camera motion and appearance variation.
+
+results:
+  caption: >-
+    Overall accuracy against LSTM-based and non-LSTM baselines. DS-GRU leads on four of five
+    datasets; a dash means the method did not report on that dataset.
+  columns: [Method, HMDB51, UCF-101, UCF-50, Hollywood2, YouTube Actions]
+  rows:
+    - ["Improved dense trajectories", "61.1%", "87.9%", "92.3%", "—", "—"]
+    - ["Bi-directional LSTM", "70.4%", "94.2%", "—", "—", "—"]
+    - ["VideoLSTM", "73.3%", "92.2%", "—", "—", "—"]
+    - ["Relational LSTM", "71.4%", "94.8%", "—", "—", "—"]
+    - ["Temporal optical flow + ML-LSTM", "72.2%", "94.4%", "94.9%", "69.5%", "95.8%"]
+    - ["Proposed DS-GRU", "72.3%", "95.5%", "95.2%", "71.3%", "97.17%"]
+
+limitations:
+  - >-
+    Feature extraction accounts for 630 ms of the 830 ms budget, so the pipeline is still dominated
+    by motion representation despite using the lightweight flow network.
+  - >-
+    GPU-only. The paper states its model has no CPU implementation because of special convolutional
+    layers, so the "embeddable in a vision sensor" claim rests on model size rather than a
+    demonstrated CPU or edge deployment.
+  - >-
+    HMDB51 remains second place, and its F1 of 60.73% is far below its 72.3% accuracy — the model
+    is uneven across classes on the hardest dataset.
+  - >-
+    Recognition is per-tracked-individual, so activities involving interaction between people, or
+    scenes where tracking fails, are not directly addressed.
+  - >-
+    The paper's running text quotes 96.17% for YouTube Actions where its own results table reports
+    97.17%; the table value is used here.
+
+related:
+  - Action recognition in video sequences using deep bi-directional LSTM with CNN features
+  - Activity recognition using temporal optical flow convolutional features and multilayer LSTM
+  - Human action recognition using attention based LSTM network with dilated CNN features
+  - "Conflux LSTMs network: A novel approach for multi-view action recognition"
+  - An efficient anomaly recognition framework using an attention residual LSTM in surveillance videos

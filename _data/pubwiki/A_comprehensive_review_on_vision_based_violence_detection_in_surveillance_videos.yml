@@ -1,0 +1,204 @@
+tldr: >
+  Earlier violence-detection surveys each covered one slice of the field — person-to-person only,
+  or non-surveillance only — leaving readers to stitch the literature together from several
+  sources. This 44-page review covers surveillance and non-surveillance, person-to-person and
+  crowd violence in one place, organised by a new taxonomy of the neural architectures used. It
+  catalogues 13 datasets with their state-of-the-art accuracies, nine open challenges, and ten
+  future directions.
+
+tags:
+  - violence detection
+  - survey
+  - surveillance
+  - anomaly recognition
+  - deep learning
+  - datasets
+  - smart cities
+
+sections:
+  - heading: Scope and framing
+    body: |
+      The review starts from a definitional point that is easy to miss. Abnormal events in
+      surveillance cover robbery, vandalism, accidents, fighting, snatching and more — all of which
+      fall under "anomaly recognition". **Violence detection** is the subset concerned with
+      fighting, which the literature treats separately because it is the most frequent abnormal event
+      in real-world surveillance.
+
+      The scale motivating this is substantial. South Korea's national and local governments install
+      more than ten thousand public CCTV cameras a year; about a million were operating in 2018, a
+      200% increase over five years, with roughly half for facility safety and fire prevention, 45%
+      for crime prevention and 4% for traffic enforcement. China had around 626 million cameras by
+      2020, and the United States roughly 50 million.
+
+      The survey draws a distinction that organises much of its analysis: **surveillance-based**
+      methods use CCTV footage, while **non-surveillance** methods work on movie violence, phone
+      video, dashcams and webcams. Most early work was non-surveillance; the shift toward
+      surveillance data tracks the spread of the cameras themselves.
+
+      Literature was collected year by year from Google, Google Scholar, ACM Digital Library,
+      Hindawi, ScienceDirect and IEEE Xplore, covering 2012 onward. The search tables are reported
+      with retrieved-versus-selected counts, which is unusually transparent for a survey.
+
+  - heading: What the survey adds over prior reviews
+    body: |
+      Four stated contributions:
+
+      **New taxonomy.** Described as the first survey to organise recent violence-detection work by
+      neural architecture — RNN, CNN/ConvNets, and CNN-LSTM/CNN-BiLSTM — alongside traditional
+      methods, covering how each analyses video patterns.
+
+      **Comprehensive review.** Each method is reviewed with its publisher, venue, citation coverage
+      and application domain, in both surveillance and non-surveillance settings.
+
+      **Abundant coverage.** Existing surveys covered *either* person-to-person violence *or* crowd
+      violence. This one covers both, so readers do not have to work across several sources — with a
+      visual summary of the working flow from input data to output.
+
+      **Guidelines and future directions.** Datasets for both domains with the challenges each
+      presents, the techniques applied to them, evaluation strategies and metrics, then current
+      challenges and future research guidelines.
+
+  - heading: The working flow
+    body: |
+      Methods are decomposed into a common pipeline — data acquisition, preprocessing, feature
+      extraction, learning, evaluation — which makes otherwise incomparable approaches comparable.
+
+      **Traditional features** covered include ORB (combining FAST and BRISK, invariant to rotation
+      and scale, robust to affine transformation and noise), Bag-of-Words representations that reduce
+      noise sensitivity by building a visual vocabulary, and optical flow, which unlike keypoint
+      descriptors uses multiple frames to measure movement between them. Motion-blob methods
+      binarise the difference between consecutive frames and mark the largest blob as the violence
+      candidate. Some approaches use Kinect skeleton data to track bone joints and detect abnormal
+      posture.
+
+      The survey's verdict on this family is direct: these methods are complex, always limited to
+      particular applications, and rely on hand-carried engineering. It also names a deeper problem —
+      **aggression is hard to define** because there is no consistency in what counts, and
+      identifying it requires a high level of interpretation.
+
+      **Deep learning methods** are presented with the 2D and 3D convolution formulations side by
+      side, the point being that 3D convolution stacks multiple frames so feature maps connect to
+      contiguous frames and capture violent motion directly. Architectures surveyed include 3D
+      ResNet, FlowNet and ConvLSTM.
+
+  - heading: Datasets and where they fall short
+    body: |
+      Thirteen datasets are catalogued with domain, frame rate, resolution, reported accuracy and
+      state-of-the-art accuracy. The most heavily used are **Hockey Fight**, **Violence in Movies**
+      and **Violent Flows**, chosen for their difficulty.
+
+      The table exposes a problem the field should take more seriously: **Violence in Movies is
+      solved at 100% and Hockey Fight at 99.9%**. Benchmarks that saturate stop measuring progress.
+      The datasets with room left are exactly the realistic ones — RWF-2000 at 89.25% and Industrial
+      Surveillance at 80%. The survey singles out RWF-2000 as needing improvement in accuracy.
+
+      Recurring dataset problems: small data volumes, low video quality and small frame sizes. The
+      mitigations in use are smoothing and cleaning filters for low resolution, geometric and colour
+      augmentation for small datasets, and defogging for outdoor footage affected by smoke, fog and
+      illumination change.
+
+  - heading: Nine open challenges
+    body: |
+      1. **Illumination variation** — outdoor scenes suffer poor night-time contrast; indoor lighting
+         disperses at edges or concentrates at points, and light glowing from corners makes live
+         detection difficult. The survey notes this is rarely taken into account despite available
+         solutions such as the local histogram of oriented gradient.
+      2. **Occlusion** — unavoidable when objects in a scene merge. Proposed remedies include
+         minimisation procedures, temporal sectioning, sum of squared distance, graph cuts,
+         polynocular stereo and jointly-operating multi-view camera setups.
+      3. **Motion effects** — camera motion, light change and rendering noise produce blurry, noisy
+         frames. Mitigations include 3x3 Gaussian filtering, histogram equalisation to spread pixel
+         intensities, and mixtures of Gaussians to suppress action-irrelevant objects.
+      4. **Movement tracking in crowds** — in dense areas people exchange goods and shake hands;
+         distinguishing that from violence requires tracking individual hand gestures. Methods
+         trained on person-to-person datasets cannot track each individual.
+      5. **Model complexity** — complex models are less interpretable, at greater risk of
+         overfitting, and too large to load onto phones or Raspberry Pi boards.
+      6. **Uncertain environments** — models are reliable in controlled conditions but not under
+         rain, smoke or storms.
+      7. **Multi-action and crowded scenes** — a single frame contains many concurrent activities;
+         distinguishing violence among them is unsolved.
+      8. **Big data and real-time processing** — continuous high-resolution capture strains both PCs
+         and resource-constrained devices, with power dissipation a real constraint.
+      9. **Significance of data** — most captured data is not useful. A scrutiny mechanism (detecting
+         humans and vehicles first, since violence concerns those objects) should be a priority.
+
+  - heading: Ten future directions
+    body: |
+      Edge intelligence; end-to-end friendly networks; cloud and fog computing; greater data
+      diversity across available datasets; violence detection on embedded devices; clustered
+      detection networks for continuous multi-point streaming; neural networks with sequential
+      learning techniques; localisation and tracking approaches; **vision transformer networks**;
+      and **federated learning**.
+
+      The last two are notable for a survey published in early 2023 — transformers and federated
+      learning were both flagged as directions the violence-detection literature had barely started
+      on, alongside the more established push toward IoT and resource-constrained deployment.
+
+contributions:
+  - >-
+    Unified surveillance and non-surveillance, person-to-person and crowd violence literature into a
+    single review, where prior surveys each covered only one of these.
+  - >-
+    Introduced a taxonomy organising violence-detection work by neural architecture family
+    alongside traditional and hybrid approaches.
+  - >-
+    Catalogued 13 datasets with domain, resolution, frame rate and both reported and
+    state-of-the-art accuracy, making benchmark saturation visible at a glance.
+  - >-
+    Documented nine current challenges with the concrete techniques proposed against each, plus ten
+    future directions including vision transformers and federated learning.
+
+datasets:
+  - name: Hockey Fight
+    note: 1,000 clips at 360x288, 25 fps. State of the art 99.9% — effectively saturated.
+  - name: Violence in Movies
+    note: 200 clips at 360x250, 25 fps. State of the art 100%.
+  - name: Violent Flows
+    note: 246 non-surveillance clips at 320x240, 25 fps. State of the art 96%.
+  - name: RWF-2000
+    note: >-
+      2,000 surveillance clips at diverse resolutions. State of the art 89.25% — flagged by the
+      survey as the benchmark most in need of improvement.
+  - name: Surveillance Camera Fight
+    note: 300 surveillance clips at 480x360, 25 fps. State of the art 95.62%.
+  - name: Industrial Surveillance
+    note: 300 surveillance clips at diverse resolutions, 80% accuracy — the lowest in the table.
+  - name: Others catalogued
+    note: BEHAVE, CAVIAR, VSD, Web Abnormality, UMN, Real-world Fight and SDHA 2000.
+
+results:
+  caption: >-
+    Selected datasets with state-of-the-art accuracy as compiled by the survey. The pattern —
+    curated non-surveillance sets solved, realistic surveillance sets not — is the point.
+  columns: [Dataset, Domain, Samples, Resolution, State-of-the-art accuracy]
+  rows:
+    - ["Violence in Movies", "Non-surveillance", "200", "360x250", "100%"]
+    - ["Hockey Fight", "Non-surveillance", "1,000", "360x288", "99.9%"]
+    - ["BEHAVE", "Surveillance", "4", "640x480", "99.3%"]
+    - ["CAVIAR", "Mixed", "—", "384x288", "98.86%"]
+    - ["Violent Flows", "Non-surveillance", "246", "320x240", "96%"]
+    - ["Surveillance Camera Fight", "Surveillance", "300", "480x360", "95.62%"]
+    - ["RWF-2000", "Surveillance", "2,000", "Diverse", "89.25%"]
+    - ["Industrial Surveillance", "Surveillance", "300", "Diverse", "80%"]
+
+limitations:
+  - >-
+    As a survey it aggregates self-reported results across differing protocols, splits and hardware,
+    so the accuracy column supports ranking rather than direct comparison.
+  - >-
+    Coverage runs to roughly 2021-2022, so it predates the vision-transformer violence-detection
+    work it recommends as a future direction.
+  - >-
+    The taxonomy is organised by architecture family, which groups methods by what they are built
+    from rather than by what problem they solve.
+  - >-
+    Several catalogued datasets carry "NA" for accuracy because their papers report AUC, ROC or
+    recall instead, leaving gaps in the comparison table.
+
+related:
+  - Violence detection using spatiotemporal features with 3D convolutional neural network
+  - An intelligent system for complex violence pattern analysis and detection
+  - An efficient anomaly recognition framework using an attention residual LSTM in surveillance videos
+  - Artificial Intelligence of Things-assisted two-stream neural network for anomaly detection in surveillance Big Video Data
+  - "Deep learning for safe autonomous driving: Current challenges and future directions"

@@ -267,6 +267,7 @@ module Jekyll
       data['title'] = entry['title']
       data['reference'] = entry
       data['permalink'] = PublicationDetails.details_path(site, entry['title'])
+      data['wiki_key'] = File.basename(@name, '.html')
     end
   end
 

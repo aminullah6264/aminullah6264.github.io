@@ -1,0 +1,159 @@
+tldr: >
+  A three-stage pipeline for detecting violence in surveillance footage: MobileNet first discards
+  every frame with no person in it, a fine-tuned C3D network reads spatiotemporal features from
+  16-frame sequences of what remains, and Intel's OpenVINO converts the trained model for fast
+  edge inference. It reaches 99.9% on Violence in Movies, 98% on Violent Crowd and 96% on Hockey
+  Fight — but the cross-dataset numbers, all between 47% and 65%, are the more honest result.
+
+tags:
+  - violence detection
+  - 3D CNN
+  - C3D
+  - surveillance
+  - anomaly detection
+  - OpenVINO
+  - edge inference
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      Surveillance cameras are ubiquitous — nearly a million public CCTV cameras were installed in
+      South Korea in 2017 alone — but their value depends on someone watching. Human operators
+      respond slowly to what they see, and violence is exactly the category where a delayed response
+      costs the most.
+
+      Prior work divides into two families with distinct failure modes.
+
+      **Hand-crafted features.** Motion trajectories, hierarchical hidden Markov models, violent
+      flow (ViF) descriptors, optical flow statistics, and blood-and-flame detectors. The paper
+      identifies a concrete flaw in ViF: if a pixel's flow vector has the same magnitude but a
+      different direction across two frames, ViF registers no difference at all. Blood and flame
+      cues produce low detection rates and false alarms, and the HHMM and HOMO approaches fail on
+      complex crowd behaviour.
+
+      **Deep learning.** Spatiotemporal interest points, GLCM texture measures, motion signal
+      analysis, LSTM over adjacent frame differences. These do better but generally still struggle
+      to extract discriminative features when body appearance varies through viewpoint change,
+      mutual occlusion and scale.
+
+      A separate, practical problem cuts across both: most systems process every frame, including
+      the vast majority containing no people at all.
+
+  - heading: How the method works
+    body: |
+      **Stage 1 — person detection as a filter.** A pre-trained MobileNet CNN detects people in the
+      stream. Only 16-frame sequences that actually contain a person proceed. This is a
+      computational filter rather than a recognition step: it cuts memory and time by removing the
+      unimportant majority of frames before the expensive model runs.
+
+      **Stage 2 — spatiotemporal classification.** The C3D architecture is fine-tuned for binary
+      classification: eight 3D convolutional layers with 3x3x3 kernels at stride 1, five max-pooling
+      layers with 2x2x2 kernels (the first uses 1x2x2 with stride 2 to preserve temporal
+      information), filter counts of 64, 128 and 256 in the first three convolutions, then fc6 and
+      fc7 with 4,096 neurons each and a two-way SoftMax.
+
+      Input sequences are 16 frames at 128x171, with an **8-frame overlap** between successive
+      clips so no transition falls between windows. During training, random 3x16x112x112 crops are
+      taken to combat overfitting. Data was split 75% training / 25% testing.
+
+      **Stage 3 — model optimisation.** The trained Caffe model is passed through Intel's
+      **OpenVINO** toolkit, which converts it into an intermediate representation tuned for optimal
+      execution on the deployment hardware, using pre-optimised kernels. On detection, an alert is
+      dispatched to the nearest police station or security department.
+
+  - heading: Within-dataset performance
+    body: |
+      Within each dataset the numbers are strong: **99.9%** on Violence in Movies, **98%** on
+      Violent Crowd, **96%** on Hockey Fight, all at a base learning rate of 0.001 and batch size 20
+      over 5,000 iterations. Learning rate mattered — at 0.01 the Violent Crowd model reached only
+      55%, against 98% at 0.001. Precision/recall are 0.9597/0.9667 (Hockey Fight), 1.0/1.0
+      (Movies), 0.9816/0.9877 (Violent Crowd), with AUCs of 0.970, 0.997 and 0.980.
+
+      Against prior work the method leads on all three: Improved Fisher Vectors reaches 99.5 / 96.4
+      / 93.7, Hough Forests with 2D CNN 99 / — / 94.6, and ViF 81.3 / 82.90.
+
+  - heading: The cross-dataset experiment
+    body: |
+      The paper does something many violence-detection papers skip: it takes each fine-tuned model
+      and tests it on the other two datasets. Every result collapses.
+
+      - Violent Crowd model → 65% on Movies, 47% on Hockey Fight
+      - Movies model → 54% on Violent Crowd, 63% on Hockey Fight
+      - Hockey Fight model → 52% on Violent Crowd, 49% on Movies
+
+      Several of these are at or below chance for a binary task. The paper's own explanation is
+      structural rather than incidental: Movies and Hockey Fight contain **person-to-person**
+      violence, while Violent Crowd contains **many people at once**, and the appearance and
+      cinematography of crowd violence vary far more widely. A model trained on one kind of violence
+      has not learned violence — it has learned that dataset's version of it.
+
+      This makes the within-dataset accuracies best read as an upper bound achievable when
+      deployment conditions match training conditions closely.
+
+contributions:
+  - >-
+    Used person detection as a preprocessing filter so that only frame sequences containing people
+    reach the 3D CNN, cutting the memory and time cost of processing an unfiltered stream.
+  - >-
+    Fine-tuned a 3D CNN to learn spatiotemporal patterns of violence directly, rather than relying
+    on hand-crafted flow descriptors with known blind spots such as ViF's direction insensitivity.
+  - >-
+    Applied Intel's OpenVINO toolkit to convert the trained model for optimised inference at the
+    deployment platform, treating deployment cost as part of the contribution.
+  - >-
+    Reported cross-dataset transfer results alongside within-dataset accuracy, documenting how
+    sharply performance falls when the type of violence changes.
+
+datasets:
+  - name: Violent Crowd (Hassner et al.)
+    note: >-
+      246 YouTube videos at 320x240, 50-150 frames each, split evenly into 123 violent and 123
+      non-violent. Originally five sets, merged into two categories. Crowd-scale violence.
+  - name: Violence in Movies
+    note: 200 clips at 360x250 — 100 violent at 25 fps and 100 non-violent at 29.97 fps. Mostly
+      person-to-person fights with cinematic framing.
+  - name: Hockey Fight
+    note: >-
+      1,000 clips at 360x288, 50 frames each, from National Hockey League footage — 500 fight and
+      500 non-fight, all in the same rink environment, making it the most visually consistent set.
+
+results:
+  caption: >-
+    Accuracy against prior work on all three benchmarks. A dash means the method did not report on
+    that dataset.
+  columns: [Method, Violence in Movies, Violent Crowd, Hockey Fight]
+  rows:
+    - ["ViF", "—", "81.3%", "82.90%"]
+    - ["sHOT", "—", "82.2%", "—"]
+    - ["ViF + OViF + AdaBoost + SVM", "—", "88%", "87.50%"]
+    - ["STIP + BoW + SVM", "89.5%", "—", "—"]
+    - ["Hough Forests + 2D CNN", "99%", "—", "94.6%"]
+    - ["Improved Fisher Vectors", "99.5%", "96.4%", "93.7%"]
+    - ["Proposed (MobileNet + C3D)", "99.9%", "98%", "96%"]
+
+limitations:
+  - >-
+    Cross-dataset accuracy ranges from 47% to 65% — at or near chance for a binary task. The model
+    generalises poorly across types of violence, which is the condition any real deployment faces.
+  - >-
+    Crowd violence and person-to-person violence appear to require different models; a system
+    trained on one does not transfer to the other.
+  - >-
+    Classification is binary and clip-level. There is no localisation of where in the frame the
+    violence occurs, and no severity or type distinction.
+  - >-
+    The person-detection filter makes violence involving no clearly detected person invisible to
+    the system, and its own false negatives propagate silently.
+  - >-
+    OpenVINO optimisation is described but no before-and-after latency or throughput figures are
+    reported, so the deployment speed-up is not quantified.
+  - >-
+    The datasets are small — 200 to 1,000 clips — which makes near-ceiling accuracies such as 99.9%
+    on Movies fragile.
+
+related:
+  - A comprehensive review on vision-based violence detection in surveillance videos
+  - An intelligent system for complex violence pattern analysis and detection
+  - An efficient anomaly recognition framework using an attention residual LSTM in surveillance videos
+  - CNN features with bi-directional LSTM for real-time anomaly detection in surveillance networks
+  - Artificial Intelligence of Things-assisted two-stream neural network for anomaly detection in surveillance Big Video Data

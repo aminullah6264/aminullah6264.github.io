@@ -1,0 +1,154 @@
+tldr: >
+  A 30 fps video is mostly redundant, and most of the frames tell you nothing new. This paper
+  extracts CNN features from every sixth frame only, then feeds the resulting sequence to a deep
+  bidirectional LSTM — two stacked layers in each of the forward and backward passes — so each
+  frame's classification depends on both the frames before and after it. The result is 91.21% on
+  UCF-101, 92.84% on YouTube Actions and 87.64% on HMDB51, at 25 frames per second.
+
+tags:
+  - action recognition
+  - bidirectional LSTM
+  - sequence learning
+  - AlexNet
+  - transfer learning
+  - UCF-101
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      Action recognition in video is hard for reasons that compound: two actions can look alike,
+      the same action looks different from another viewpoint, the camera itself may be moving with
+      the performer, and scale, pose and illumination all vary. Actions themselves range from a
+      single limb's motion to whole-body coordination — kicking a ball versus jumping for a header.
+
+      Earlier hand-crafted approaches — space-time volumes, space-time features, motion history
+      images with HOG, trajectory methods — work on staged footage with simple backgrounds and
+      break down on realistic video. Space-time volume methods in particular cannot handle multiple
+      people in a scene, and combining several feature types to compensate drives up cost to the
+      point where continuous streaming is out of reach.
+
+      The deep learning methods available at the time had their own gap. 3D convolutional networks
+      and two-stream CNNs capture motion over a short window, but the temporal context they see is
+      fixed and local. Recognising an action the way a person does — by accumulating evidence across
+      a sequence of frames — calls for a recurrent model.
+
+  - heading: Key idea
+    body: |
+      Two decisions define the method.
+
+      **Skip frames aggressively.** At 30 fps, consecutive frames are near-duplicates and
+      processing all of them is waste. The paper samples every sixth frame, and reports
+      experimentally that this does not disturb the action's sequence structure. This is what brings
+      the method into real-time range.
+
+      **Read the sequence in both directions.** In a plain LSTM the state at time *t* depends only
+      on frames up to *t*. In a bidirectional LSTM, two recurrent stacks run in opposite directions
+      and their hidden states are combined, so the decision at time *t* draws on both *t-1* and
+      *t+1*. The paper deepens this further — two stacked LSTM layers in *each* direction, hence
+      "deep bidirectional". Plain and multi-layer unidirectional LSTMs were found insufficient for
+      the complex frame-to-frame patterns in this data.
+
+  - heading: How the method works
+    body: |
+      **Feature extraction.** Every sixth frame goes through a pre-trained AlexNet — five
+      convolutional layers, three pooling layers, three fully connected layers, each followed by
+      normalisation and ReLU. The 1,000-dimensional **FC8** output is the frame's representation.
+      Using a model pretrained on ImageNet's 15M images avoids training a visual backbone from
+      scratch.
+
+      **Chunking for long video.** Frame features are grouped into chunks covering a time interval,
+      and the DB-LSTM is run over each chunk in turn. This is what lets the method handle videos of
+      arbitrary length rather than a fixed clip: a one-second window contributes six frames, so the
+      recurrent network processes six chunks. A whole video is classified by the most frequently
+      predicted class across its chunks.
+
+      **The recurrent stack.** Standard LSTM gating — input, forget and output gates with a memory
+      cell — solves the vanishing gradient problem that stops plain RNNs from carrying information
+      across long sequences. Layers are stacked so each receives the previous layer's hidden state,
+      capturing progressively higher-level sequence structure. Forward and backward passes each
+      carry two such layers, and the combined final state is passed to a SoftMax classifier;
+      intermediate LSTM outputs are discarded since only the video-level label is needed.
+
+      **Training.** Datasets split 60% train / 20% validation / 20% test. Mini-batches of 512, 1,000
+      iterations, learning rate 0.001, cross-entropy loss, stochastic optimisation.
+
+  - heading: Results and error analysis
+    body: |
+      The gains are uneven across datasets, which is itself informative. On **UCF-101** the method
+      improves the state of the art from 89.1% to 91.21%, a modest 2.11 points. On **HMDB51** the
+      jump is much larger — 68.5% to 87.64% — and on **YouTube Actions** it reaches 92.84% against
+      91.6% for the best prior method.
+
+      Class-level behaviour on UCF-101: most categories exceed 80%, several reach 100%, and only
+      three fall below 50%. On HMDB51, more than 20 classes hit 100% while two fall under 20%.
+
+      The failure modes are consistently about visual overlap rather than temporal modelling.
+      *Soccer* is confused with *walking* — a player walking around a ball genuinely looks like
+      walking. *Tennis* and *volleyball* confuse each other because both show people jumping near a
+      net against similar backgrounds. Qualitatively, *basketball shoot* was misread as *soccer
+      juggling*, and *tennis swing* as *jumping*.
+
+      **Cost.** Feature extraction runs at roughly 0.23 s per frame, and classifying one second of
+      video through the DB-LSTM takes 0.53 s, for about 1.12 s per one-second clip — approximately
+      25 fps end to end.
+
+contributions:
+  - >-
+    Showed that sampling every sixth frame preserves enough temporal structure for action
+    recognition while cutting the processing load fivefold, with an explicit accuracy-versus-time
+    comparison across frame-jump settings.
+  - >-
+    Built a deep bidirectional LSTM with two stacked layers in each direction, so predictions use
+    both past and future frames rather than past frames alone.
+  - >-
+    Processed video in time-interval chunks, letting the method handle long videos instead of the
+    fixed-length clips most contemporary architectures assumed.
+  - >-
+    Improved state-of-the-art accuracy on three benchmarks at once, most dramatically on HMDB51.
+
+datasets:
+  - name: UCF-101
+    note: >-
+      13,320 YouTube videos across 101 categories spanning human-object interaction, body motion,
+      human-human interaction, musical instruments and sports. Realistic rather than acted footage.
+  - name: HMDB51
+    note: >-
+      6,849 clips in 51 classes covering body-object interaction, facial actions and human
+      interaction, with 4-6 clips per subject under varied poses, viewpoints and illumination.
+  - name: YouTube Actions (Action YouTube)
+    note: >-
+      11 sports categories with 25 subjects. Small but difficult, with heavy camera motion,
+      appearance and scale variation, cluttered backgrounds and lighting change.
+
+results:
+  caption: Average recognition accuracy against the prior state of the art on each benchmark.
+  columns: [Dataset, Previous best cited, DB-LSTM, Change]
+  rows:
+    - ["UCF-101", "89.1% (TPC / MDI)", "91.21%", "+2.11 pts"]
+    - ["HMDB51", "68.5%", "87.64%", "+19.14 pts"]
+    - ["YouTube Actions", "91.6%", "92.84%", "+1.24 pts"]
+
+limitations:
+  - >-
+    The CNN backbone is frozen and processes frames independently, so all motion modelling is
+    delegated to the LSTM — no optical flow or 3D convolution captures short-range motion directly.
+  - >-
+    Being bidirectional, the model needs the whole chunk before deciding, so it is real-time in
+    throughput but not causal — it cannot classify a truly live stream without buffering.
+  - >-
+    Confusions cluster around visually similar sports sharing backgrounds and body motion (tennis
+    versus volleyball, soccer versus walking), which the temporal model does not resolve.
+  - >-
+    The six-frame jump was tuned on 30 fps footage; slower actions or different frame rates would
+    need retuning, and no adaptive sampling is proposed.
+  - >-
+    AlexNet's FC8 features are a global, 1,000-dimensional abstraction — later work by the same
+    group moves to intermediate convolutional layers precisely because FC features change too
+    little between adjacent frames.
+
+related:
+  - Action recognition using optimized deep autoencoder and CNN for surveillance data streams of non-stationary environments
+  - Activity recognition using temporal optical flow convolutional features and multilayer LSTM
+  - "Conflux LSTMs network: A novel approach for multi-view action recognition"
+  - Efficient activity recognition using lightweight CNN and DS-GRU network for surveillance applications
+  - Human action recognition using attention based LSTM network with dilated CNN features

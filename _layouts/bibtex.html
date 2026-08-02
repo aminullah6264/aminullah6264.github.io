@@ -50,6 +50,118 @@ layout: default
       <p>{{ publication.abstract }}</p>
     {% endif %}
 
+    {% assign wiki = site.data.pubwiki[page.wiki_key] %}
+    {% if wiki %}
+      <div class="pubwiki">
+        {% if wiki.tldr %}
+          <div class="pubwiki-tldr">
+            <span class="pubwiki-tldr-label">In short</span>
+            <p>{{ wiki.tldr | markdownify | remove: '<p>' | remove: '</p>' }}</p>
+          </div>
+        {% endif %}
+
+        {% if wiki.sections and wiki.sections.size > 1 %}
+          <nav class="pubwiki-toc">
+            <span class="pubwiki-toc-label">Contents</span>
+            <ol>
+              {% for section in wiki.sections %}
+                <li><a href="#{{ section.heading | slugify }}">{{ section.heading }}</a></li>
+              {% endfor %}
+              {% comment %}Anchors are namespaced so a section heading of "Results" cannot collide with the results table.{% endcomment %}
+              {% if wiki.contributions %}<li><a href="#wiki-contributions">Key contributions</a></li>{% endif %}
+              {% if wiki.datasets %}<li><a href="#wiki-datasets">Datasets</a></li>{% endif %}
+              {% if wiki.results %}<li><a href="#wiki-results">Results</a></li>{% endif %}
+              {% if wiki.limitations %}<li><a href="#wiki-limitations">Limitations and open questions</a></li>{% endif %}
+            </ol>
+          </nav>
+        {% endif %}
+
+        {% for section in wiki.sections %}
+          <section class="pubwiki-section">
+            <h3 id="{{ section.heading | slugify }}">{{ section.heading }}</h3>
+            {{ section.body | markdownify }}
+          </section>
+        {% endfor %}
+
+        {% if wiki.contributions %}
+          <section class="pubwiki-section">
+            <h3 id="wiki-contributions">Key contributions</h3>
+            <ul>
+              {% for item in wiki.contributions %}
+                <li>{{ item | markdownify | remove: '<p>' | remove: '</p>' }}</li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endif %}
+
+        {% if wiki.datasets %}
+          <section class="pubwiki-section">
+            <h3 id="wiki-datasets">Datasets</h3>
+            <ul class="pubwiki-datasets">
+              {% for dataset in wiki.datasets %}
+                <li><strong>{{ dataset.name }}</strong>{% if dataset.note %} — {{ dataset.note }}{% endif %}</li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endif %}
+
+        {% if wiki.results %}
+          <section class="pubwiki-section">
+            <h3 id="wiki-results">Results</h3>
+            <div class="pubwiki-table-wrap">
+              <table class="table">
+                {% if wiki.results.columns %}
+                  <thead>
+                    <tr>
+                      {% for column in wiki.results.columns %}<th scope="col">{{ column }}</th>{% endfor %}
+                    </tr>
+                  </thead>
+                {% endif %}
+                <tbody>
+                  {% for row in wiki.results.rows %}
+                    <tr>
+                      {% for cell in row %}<td>{{ cell }}</td>{% endfor %}
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% if wiki.results.caption %}
+              <p class="pubwiki-caption">{{ wiki.results.caption }}</p>
+            {% endif %}
+          </section>
+        {% endif %}
+
+        {% if wiki.limitations %}
+          <section class="pubwiki-section">
+            <h3 id="wiki-limitations">Limitations and open questions</h3>
+            <ul>
+              {% for item in wiki.limitations %}
+                <li>{{ item | markdownify | remove: '<p>' | remove: '</p>' }}</li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endif %}
+
+        {% if wiki.related %}
+          <section class="pubwiki-section">
+            <h3 id="wiki-related">Related work on this site</h3>
+            <ul class="pubwiki-related">
+              {% for title in wiki.related %}
+                <li><a href="{{ title | publication_details_path | relative_url }}">{{ title }}</a></li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endif %}
+
+        {% if wiki.tags %}
+          <p class="pubwiki-tags">
+            {% for tag in wiki.tags %}<span class="pubwiki-tag">{{ tag }}</span>{% endfor %}
+          </p>
+        {% endif %}
+      </div>
+    {% endif %}
+
     <h3>Resources</h3>
     <p>
       {% if publication.html %}<a class="btn btn-sm z-depth-0" href="{{ publication.html }}">HTML</a>{% endif %}

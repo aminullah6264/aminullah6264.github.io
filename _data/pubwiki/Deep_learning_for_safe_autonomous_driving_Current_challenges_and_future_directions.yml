@@ -1,0 +1,200 @@
+tldr: >
+  A survey of deep learning for the seven perception tasks that autonomous driving safety rests
+  on, organised around a measurement-analysis-execution pipeline. Its value is less the taxonomy
+  than the numbers it collects: pedestrian detection reaches 74% mAP in hard conditions,
+  drowsiness detection tops out at 75.6% where humans manage 80%, and the best traffic-light
+  detector on the VIVA dataset achieves 44% IoU. The paper's blunt conclusion is that none of the
+  reviewed methods handles measurement, analysis and execution together, and that all of them
+  assume high-spec GPUs or cloud servers.
+
+tags:
+  - autonomous driving
+  - survey
+  - intelligent transportation systems
+  - pedestrian detection
+  - traffic sign detection
+  - explainable AI
+  - federated learning
+  - edge computing
+
+sections:
+  - heading: Why the survey exists
+    body: |
+      The safety case for autonomous driving is a numbers argument. In the USA alone there are
+      roughly 6 million car accidents a year, injuring around 3 million people, with more than 90
+      deaths a day. Alcohol accounts for about 40%, speeding 30%, reckless driving 33%, and
+      distracted driving kills more than 9 people daily. These are all failure modes of human
+      attention.
+
+      Existing surveys covered planning and control, traffic light recognition, and vehicle
+      localisation separately, along with the general role of deep learning in intelligent transport
+      systems. What was missing was a focused study of deep learning for **safety** specifically —
+      which is the backbone of any autonomous driving argument.
+
+      The survey structures the field around **seven tasks**: road detection, lane detection,
+      vehicle detection, pedestrian detection, drowsiness detection, collision avoidance and traffic
+      sign detection. These map onto a three-stage **measurement-analysis-execution** pipeline:
+      sensors and cameras gather data (M), filtering and tracking algorithms process it (A), and
+      actuators trigger an alarm or take control — automatic braking, for instance (E).
+
+      The SAE automation levels give the other axis. Level 0 is full human control; Level 2 (Tesla
+      Autopilot, Nissan ProPilot) keeps the car in lane but needs an alert driver; Level 3 (claimed
+      by Audi's A8 Traffic Jam Pilot) drives in certain conditions with the human on standby; Level
+      4 can act safely when a request for human intervention goes unanswered, though it is not
+      recommended in uncertain weather; Level 5 is full autonomy.
+
+  - heading: What the numbers say
+    body: |
+      The survey's empirical section is the most useful part, because it puts the current state of
+      each task on a common footing.
+
+      **Pedestrian detection** (KITTI, mAP): F-PointNet leads with 87.81 easy / 77.25 moderate /
+      74.46 hard, using fused 2D and 3D CNNs. The overall state of the art sits around 85% easy,
+      70-80% moderate, and **under 65% hard**. The survey's comment is direct — for safe driving
+      this needs to reach human-level perception across all three, and it does not.
+
+      **Vehicle detection** (KITTI, AUC): 3DOP reaches 93.04 easy; SubCNN gets 88.64 moderate and
+      79.27 hard. The survey notes that multi-CNN methods like SubCNN are not suited to real-time
+      processing, which limits their relevance regardless of accuracy.
+
+      **Drowsiness detection** (accuracy): the best result, FFA, is **75.57%** — below the 80%
+      average accuracy of a human judging the same thing across day and night conditions. AlexNet
+      manages 65.85%, VGG-FaceNet 67.85%, LRCN 61.5%, FlowImageNet 62.99%, DDD-FFA 70.81%. The two
+      best methods ensemble features from three CNNs, which lifts accuracy but triples processing
+      time. AlexNet and VGG-FaceNet carry 60M and 138M parameters — impractical for in-vehicle
+      real-time use.
+
+      **Traffic sign detection** (Swedish Traffic Sign Dataset, 19,236 images, 20 categories):
+      results are strong. MR Features + VSSA reaches 99.18% precision and 94.42% recall; Mask R-CNN
+      97.5% / 96.7%.
+
+      **Traffic light detection** (VIVA, IoU) is the outlier and the most alarming result. YOLOv2
+      reaches 25%, YOLOv2-tiny 21%, YOLOv3 18%, YOLOv3-tiny 16%, SSD 10%, Faster R-CNN 12%. The best
+      method, RTTLD, achieves **44% IoU**. On a dataset of complex real scenes covering green, red
+      and turn signals at short and long range across day and night, well-known detectors are
+      performing poorly.
+
+  - heading: The ten challenges
+    body: |
+      The survey's critical verdict on the reviewed literature: **none of the methods handles
+      measurement, analysis and execution together**, they are computationally expensive, and they
+      assume high-spec GPUs or cloud servers — a setting that ignores energy consumption and
+      prediction latency, both of which are real constraints in a vehicle.
+
+      The ten open challenges:
+
+      1. **System complexity** — AD is a chain of decisions where each output feeds the next, so an
+         efficient motion planner may require an energy-intensive feedback controller, and simpler
+         controllers demand more detailed planning. These metrics conflict and must be balanced
+         on the fly.
+      2. **Road environment dynamicity** — illuminated advertising, digitised streets and rising
+         traffic volume all degrade detection, tracking and recognition accuracy.
+      3. **Big data and real-time processing** — sensors, cameras and LIDAR generate high-resolution
+         data continuously; processing it in real time under accuracy, power and cost constraints is
+         unsolved.
+      4. **Intelligent data prioritisation** — a vehicle cannot process everything it captures, so
+         it needs a mechanism to filter what matters across varied environmental scenarios.
+      5. **Robustness and adaptability** — most models are trained in one environment and fail
+         across weather conditions; snow, rain and fog remain inherently hard.
+      6. **Sensor fusion for dynamic decision making** — no single sensor reaches target accuracy,
+         but fusion work has focused on accuracy over implementation feasibility.
+      7. **Fairness, accountability and transparency** — decisions that affect human lives require
+         explanation, and deep models are black boxes. XAI could expose learned knowledge, enable
+         post-mortem analysis of incorrect decisions, and reveal bias from imbalanced training data.
+      8. **Online learning** — a model trained for urban driving does not transfer to rural roads
+         with different traffic rules, nor to newly built areas or changed climates.
+      9. **Adversarial attacks** — printable stickers have been shown to make vehicle cameras
+         misclassify traffic signs. Defence research is active but has not been reconciled with
+         design specifications and admissible risk limits.
+      10. **Traffic sign variability** — detectors are trained at fixed input resolution, so resizing
+          high-resolution images makes small signs undetectable. At 100 km/h, camera motion destroys
+          the structure of small sign boards entirely.
+
+  - heading: Recommended directions
+    body: |
+      Eight directions are proposed:
+
+      - **Energy-friendly CNNs** — current architectures' memory and compute demands limit their
+        usefulness in-vehicle.
+      - **Reinforcement learning** — RL learns near-optimal control and path-planning policies, but
+        almost all results come from simulators or restricted trials due to regulatory limits and
+        prototype availability. Models trained offline in virtual environments cannot be deployed
+        directly. Meta-reinforcement learning and higher-realism simulation (procedural urban
+        scenario generation, data augmentation imprinting weather onto real driving data) are the
+        suggested routes.
+      - **Sequence learning and GANs** — pedestrian activity cannot be read from a single frame.
+        GANs could re-render scenes from new viewpoints to build richer RL training environments.
+      - **Reliable, efficient motion planners and feedback controllers** — balancing computational
+        burden, speed and safety.
+      - **Universal benchmark datasets** — KITTI and others evaluate individual aspects; nothing
+        measures the performance of a whole AD prototype.
+      - **Industrialisation and personalisation** — letting users adjust safety, speed and feature
+        preferences.
+      - **Edge computing** — the standard train-centrally-then-deploy pattern fails when vehicular
+        data changes over time, so online training at the edge is needed.
+      - **Privacy-aware knowledge sharing** — federated learning lets manufacturers improve shared
+        models by exchanging parameters rather than data, which matters because commercial
+        stakeholders will not share driving data from their customer base.
+
+contributions:
+  - >-
+    Organised deep learning for autonomous driving safety around seven concrete tasks mapped to a
+    measurement-analysis-execution pipeline, rather than by algorithm family.
+  - >-
+    Compiled comparative empirical results per task on common benchmarks (KITTI, STSD, VIVA), making
+    the gap between the strongest and weakest areas directly visible.
+  - >-
+    Identified ten open challenges including several that receive little attention elsewhere —
+    explainability under regulatory constraints, adversarial stickers on traffic signs, and the
+    resolution problem for small sign boards at speed.
+  - >-
+    Argued that no reviewed method addresses measurement, analysis and execution jointly, and that
+    the field's reliance on high-spec GPUs and cloud servers is a substantive gap rather than an
+    implementation detail.
+
+datasets:
+  - name: KITTI
+    note: >-
+      Used for road, lane, vehicle and pedestrian detection, with easy / moderate / hard scenarios.
+      Easy means a bounding box of at least 40 pixels height with no occlusion; moderate and hard
+      drop to 25 pixels with partial and heavy occlusion respectively.
+  - name: STSD (Swedish Traffic Sign Dataset)
+    note: 19,236 images across 20 traffic sign categories.
+  - name: VIVA
+    note: >-
+      Traffic light detection in extremely complex scenes — green, red and turn signals at short and
+      long range, across day and night with varied illumination.
+
+results:
+  caption: >-
+    Best reported performance per safety task, as compiled by the survey. The metric differs by
+    task; the pattern of where deep learning is and is not ready is the point.
+  columns: [Task, Benchmark, Metric, Best result, Note]
+  rows:
+    - ["Vehicle detection (easy)", "KITTI", "AUC", "93.04 (3DOP)", "Not real-time"]
+    - ["Vehicle detection (hard)", "KITTI", "AUC", "79.27 (SubCNN)", "Multi-CNN, slow"]
+    - ["Pedestrian detection (easy)", "KITTI", "mAP", "87.81 (F-PointNet)", "2D + 3D fusion"]
+    - ["Pedestrian detection (hard)", "KITTI", "mAP", "74.46 (F-PointNet)", "Field average under 65%"]
+    - ["Traffic sign detection", "STSD", "Precision / recall", "99.18% / 94.42%", "MR Features + VSSA"]
+    - ["Drowsiness detection", "—", "Accuracy", "75.57% (FFA)", "Humans average 80%"]
+    - ["Traffic light detection", "VIVA", "IoU", "44% (RTTLD)", "YOLOv3 reaches only 18%"]
+
+limitations:
+  - >-
+    As a survey it reports results as published by their authors, under differing protocols and
+    hardware, so cross-method comparisons within a task are indicative rather than controlled.
+  - >-
+    Coverage stops at the measurement-analysis-execution pipeline; planning, control, localisation
+    and V2X communication are deferred to other surveys.
+  - >-
+    Published in 2021 with references collected through 2020, so it predates the transformer-based
+    perception and end-to-end driving models that followed.
+  - >-
+    Several reported figures are read from normalised bar charts rather than tables, so precision
+    varies between tasks.
+
+related:
+  - Ai-driven salient soccer events recognition framework for next generation iot-enabled environments
+  - "SD-Net: Understanding overcrowded scenes in real-time via an efficient dilated convolutional neural network"
+  - Efficient activity recognition using lightweight CNN and DS-GRU network for surveillance applications
+  - A comprehensive review on vision-based violence detection in surveillance videos

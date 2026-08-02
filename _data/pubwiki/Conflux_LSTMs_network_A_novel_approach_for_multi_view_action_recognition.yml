@@ -1,0 +1,175 @@
+tldr: >
+  Recognising an action from several synchronised cameras is harder than it sounds: each
+  viewpoint sees a different, partly occluded version of the same event. This paper gives every
+  camera its own stacked LSTM to learn what that view alone can tell you, then fuses the views
+  with a correlation layer built from pairwise dot products. On Northwestern-UCLA it reaches
+  88.9% average accuracy against 84.2% for the best prior RGB method, using only RGB video — no
+  depth, no skeletons.
+
+tags:
+  - action recognition
+  - multi-view
+  - LSTM
+  - sequence learning
+  - video analytics
+  - VGG19
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      Human action recognition from a single camera is a mature problem. The multi-view version
+      is not, and the reasons are structural rather than incidental. When several cameras watch
+      the same person, the appearance of an action changes drastically between viewpoints, whole
+      body parts disappear behind occluders in some views but not others, and the performer's
+      scale differs from camera to camera. A model that simply pools features across views ends up
+      averaging away exactly the evidence that distinguishes one action from another.
+
+      Prior multi-view work attacked this with attention modules, joint sparse representations
+      with distribution adaptation, and multi-view dynamic images. The paper's reading of that
+      literature is that these representations are brittle under large viewpoint and scale changes,
+      and that they tend to commit to one view's appearance and motion evidence rather than
+      weighing all views at once. A second gap is practical: methods that do model temporal
+      structure well are usually expensive enough to rule out real-time surveillance use.
+
+      The paper deliberately restricts itself to RGB input. Depth and skeleton streams make the
+      problem easier, but they require specific sensors; RGB cameras are what is already installed
+      in the buildings and streets where this would be deployed.
+
+  - heading: Key idea
+    body: |
+      The architecture is named after the confluence of rivers: several independent streams that
+      merge. Each camera view gets a **dedicated stacked LSTM** that never sees the other views
+      during its own sequence modelling — the *view self-reliant* stage. Only after each stream has
+      formed its own opinion about the temporal pattern in its own view are the streams merged, in
+      a *view inter-reliant* stage that measures how the views agree.
+
+      The merge is not concatenation. Because the cameras have overlapping fields of view, their
+      per-view sequence representations carry substantial redundancy and correlation, and the paper
+      treats that correlation itself as the recognition signal. Borrowing the multiplicative patch
+      comparison idea from FlowNet, the correlation layer takes **pairwise dot products** between
+      feature points of the different views' sequence outputs, convolving each stream against the
+      other streams instead of against learned kernels.
+
+  - heading: How the method works
+    body: |
+      The pipeline has four stages.
+
+      **1. Frame-level features.** Each frame goes through a pre-trained VGG19. Rather than the
+      fully connected layers, the paper taps the **Conv5_4** convolutional layer. The argument is
+      specific to video: fully connected activations encode global, slowly changing abstractions,
+      so consecutive frames produce nearly identical vectors and the temporal signal is washed out.
+      Convolutional kernels cover small receptive fields and therefore respond to exactly the local
+      motion that distinguishes one frame from the next. Conv5_4 yields 7x7x512 feature maps; a 7x7
+      average pooling collapses each map to one value, producing a **512-dimensional vector per
+      frame**. With a sequence length of 15 frames, each view contributes a 7,680-dimensional
+      sequence.
+
+      **2. View self-reliant network.** Each view drives a **three-layer stacked LSTM with 256
+      memory cells**, mapping 512 to 256 to 128 dimensions. Every view has its own copy of this
+      stack, so a three-view setup has three parallel LSTM towers, each accounting for roughly 2.29M
+      parameters. Bidirectional and deeper structures were considered and rejected on time-complexity
+      grounds.
+
+      **3. View inter-reliant network.** The correlation layer compares feature points across the
+      per-view sequences by pairwise dot product plus a bias, collapsing the multi-view sequences
+      into a single one-dimensional representation.
+
+      **4. Classification.** Three fully connected layers of 128, 64 and 18 units follow the
+      correlation layer, then a SoftMax classifier. The complete three-view network holds about
+      **6.8M parameters**. Network size and cost grow with the number of views, and the paper is
+      explicit that accuracy also depends on how much the views overlap and how differently the
+      performer is scaled across cameras.
+
+  - heading: Training setup
+    body: |
+      Implementation was TensorFlow 1.12 under Python 3.5 on Ubuntu 16.04, trained on a 12GB
+      GeForce Titan X with an i5-6600 CPU and 16GB RAM. The learning rate started at 0.01 and
+      dropped to 0.001 after 250 iterations, with stochastic optimisation for cost minimisation.
+      Data was split 60% train / 20% validation / 20% test.
+
+      Two design choices were settled empirically. Sequence length was chosen as 15 frames after
+      comparing 30, 25 and 15 on accuracy against runtime. LSTM cell size was chosen as 256 over
+      512, because with three stacked layers per view the larger cell size raised processing time
+      steeply. The training curves also confirm the feature-layer argument: Conv5_4 features gave
+      consistently higher validation accuracy than FC8 features.
+
+  - heading: Closed-set versus open-set evaluation
+    body: |
+      One of the more useful things about this paper's evaluation is that it does not stop at the
+      standard protocol. In the **closed set**, test clips are held out from the same views used
+      for training. In the **open set**, the model is trained on some views and tested on views it
+      has never seen — the situation that actually occurs when a camera is added or moved.
+
+      On Northwestern-UCLA the network scored **90.1% closed-set and 88.9% open-set**; on MCAD,
+      **80.3% closed-set and 86.9% open-set**. The small open-set drop on Northwestern-UCLA comes
+      mostly from confusion between *walk around* and *carry*. Class-wise, most categories clear
+      70%, with *stand up*, *donning* and *doffing* above 90%, while *sit down* falls to about 55%
+      because it is systematically confused with *stand up* — unsurprising for two actions that are
+      near time-reverses of each other.
+
+contributions:
+  - >-
+    Identified Conv5_4 of a pre-trained VGG19 as the right frame representation for sequence
+    learning, on the grounds that fully connected features change too little between consecutive
+    frames to encode motion.
+  - >-
+    Introduced the conflux structure — a separate stacked LSTM per camera view — so that each
+    view's self-reliant temporal pattern is learned before any cross-view mixing happens.
+  - >-
+    Added a view inter-reliant correlation layer that fuses views by pairwise dot product rather
+    than concatenation, turning inter-view redundancy into an explicit recognition cue.
+  - >-
+    Evaluated under both closed-set and open-set protocols, reporting accuracy on views never seen
+    during training rather than only on held-out clips from training views.
+
+datasets:
+  - name: Northwestern-UCLA Multiview Action 3D
+    note: >-
+      3 synchronised Kinect cameras, 10 action categories, 10 subjects; RGB stream only (depth and
+      skeleton data ignored). Shared background and visually similar categories make it hard.
+  - name: MCAD (Multi-Camera Action Dataset)
+    note: >-
+      5 cameras in a CCTV setup — 3 static fisheye at 1280x960 and 2 pan-tilt-zoom at 704x576 —
+      with 18 actions by 20 subjects, repeated 4 times by day and 4 by evening. The moving,
+      zooming cameras add viewpoint and scale variation.
+
+results:
+  caption: Overall recognition accuracy as reported in the paper's comparison tables (Tables 3 and 4).
+  columns: [Dataset, Method, Accuracy]
+  rows:
+    - ["Northwestern-UCLA", "MST-AOG w/o Low-S", "65.3%"]
+    - ["Northwestern-UCLA", "MST-AOG w Low-S", "73.3%"]
+    - ["Northwestern-UCLA", "HOPC", "80.0%"]
+    - ["Northwestern-UCLA", "Multi-view dynamic images + CNN", "84.2%"]
+    - ["Northwestern-UCLA", "Conflux LSTMs network", "88.9%"]
+    - ["MCAD", "Cuboids", "56.8%"]
+    - ["MCAD", "Covariance matrices", "64.3%"]
+    - ["MCAD", "STIP", "81.7%"]
+    - ["MCAD", "IDT", "84.2%"]
+    - ["MCAD", "Conflux LSTMs network", "86.9%"]
+
+limitations:
+  - >-
+    The network is instantiated per view, so both parameter count and inference cost scale with
+    the number of cameras — a three-view model is already 6.8M parameters before a fourth stream.
+  - >-
+    It cannot run on a single view. The correlation layer needs at least two streams, which forced
+    a modified protocol on Northwestern-UCLA (training on V1 and V2, testing on V2 and V3) rather
+    than the single-view test protocol other methods use, so the comparison is not like-for-like.
+  - >-
+    Accuracy depends on how much the camera fields of view overlap and on the scale of the
+    performer in each view; the paper reports this as an observation rather than quantifying it.
+  - >-
+    Feature extraction uses a frozen VGG19, which dominates the runtime. The authors name
+    replacing it with a lightweight backbone as the main direction for making the system
+    deployable on embedded hardware.
+  - >-
+    Near-symmetric action pairs remain unsolved — sit down reaches only about 55% because it is
+    confused with stand up.
+
+related:
+  - Action recognition in video sequences using deep bi-directional LSTM with CNN features
+  - Action recognition using optimized deep autoencoder and CNN for surveillance data streams of non-stationary environments
+  - Efficient activity recognition using lightweight CNN and DS-GRU network for surveillance applications
+  - Multiview summarization and activity recognition meet edge computing in IoT environments
+  - Cloud-assisted multiview video summarization using CNN and bidirectional LSTM

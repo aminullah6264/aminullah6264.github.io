@@ -1,0 +1,99 @@
+// Wiki-style content blocks on publication detail pages (_layouts/bibtex.html).
+// Content comes from _data/pubwiki/<title-slug>.yml.
+
+.pubwiki {
+  margin-bottom: 2rem;
+
+  .pubwiki-tldr {
+    background-color: var(--global-card-bg-color);
+    border-left: 3px solid var(--global-theme-color);
+    border-radius: 4px;
+    padding: 0.9rem 1.1rem;
+    margin-bottom: 1.5rem;
+
+    .pubwiki-tldr-label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--global-theme-color);
+      margin-bottom: 0.35rem;
+    }
+
+    p {
+      margin-bottom: 0;
+    }
+  }
+
+  .pubwiki-toc {
+    border: 1px solid var(--global-divider-color);
+    border-radius: 4px;
+    padding: 0.85rem 1.1rem;
+    margin-bottom: 2rem;
+
+    .pubwiki-toc-label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--global-text-color-light);
+      margin-bottom: 0.4rem;
+    }
+
+    ol {
+      margin-bottom: 0;
+      padding-left: 1.2rem;
+      font-size: 0.95rem;
+
+      li {
+        margin-bottom: 0.15rem;
+      }
+    }
+  }
+
+  .pubwiki-section {
+    margin-bottom: 1.75rem;
+
+    h3 {
+      scroll-margin-top: 5rem;
+      padding-bottom: 0.3rem;
+      border-bottom: 1px solid var(--global-divider-color);
+      margin-bottom: 0.85rem;
+    }
+  }
+
+  .pubwiki-table-wrap {
+    overflow-x: auto;
+
+    table {
+      margin-bottom: 0.5rem;
+
+      td,
+      th {
+        font-size: 0.95rem;
+        white-space: nowrap;
+      }
+    }
+  }
+
+  .pubwiki-caption {
+    font-size: 0.875rem;
+    color: var(--global-text-color-light);
+  }
+
+  .pubwiki-tags {
+    margin-top: 1.5rem;
+
+    .pubwiki-tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      border: 1px solid var(--global-divider-color);
+      border-radius: 999px;
+      padding: 0.1rem 0.6rem;
+      margin: 0 0.3rem 0.4rem 0;
+      color: var(--global-text-color-light);
+    }
+  }
+}

@@ -1,0 +1,170 @@
+tldr: >
+  Searching a surveillance archive by content fails in a specific way: soccer, baseball and
+  cricket all take place on green grass, so a feature vector that encodes background retrieves the
+  wrong sport. This paper inspects which neurons in a 3D CNN's feature maps actually fire on the
+  event rather than the scenery, keeps only those, and compresses the survivors into binary hash
+  codes with PCA. Using 537 of 1,024 feature maps beats using all of them, and 512-bit codes give
+  near-identical retrieval at a fraction of the matching cost.
+
+tags:
+  - video retrieval
+  - 3D CNN
+  - feature selection
+  - hashing
+  - PCA
+  - surveillance
+  - C3D
+
+sections:
+  - heading: Problem and motivation
+    body: |
+      Surveillance networks generate video faster than anyone can index it, and the retrieval a
+      security operator needs is **fine-grained** — this particular kind of event — not the coarse
+      category matching that general video retrieval targets.
+
+      The representation options each fail differently. **Low-level features** (SIFT, SURF, ORB)
+      are fast but describe texture and corners, badly under-representing what a video is about.
+      **Mid-level features** like motion and saliency do better. **High-level deep features**
+      represent content well but are high-dimensional, so both storage and the distance computation
+      at query time become expensive at archive scale.
+
+      There is a subtler failure the paper is really aimed at. A deep feature vector encodes
+      everything in the frame, including background. Since many events share a setting — the
+      running example is that soccer, baseball and cricket are all played on green grass — matching
+      on full features retrieves videos that look alike rather than videos where the same thing
+      happens.
+
+  - heading: Key idea
+    body: |
+      Not every neuron in a convolutional feature map is doing useful work for a given event. Some
+      fire on the person and the motion; others fire on the grass, the sky, the stadium. If you can
+      tell which is which, you can throw away the second group and get a representation that is both
+      smaller *and* more discriminative — because what you removed was actively causing false
+      matches.
+
+      The paper identifies these empirically. Feed a training set of one event type through a
+      pre-trained C3D network, record which feature maps activate strongly, and accumulate this
+      across samples into a **neuron activation matrix**. Feature maps that never activate for any
+      training sample can be discarded outright. The rest are ranked by an activation histogram and
+      thresholded.
+
+      Then a second reduction: convert the surviving float features into **binary hash codes**, so
+      similarity becomes Hamming distance over bits rather than Euclidean distance over doubles.
+
+  - heading: How the method works
+    body: |
+      **Feature extraction.** C3D is used rather than a 2D CNN because a 2D network cannot
+      represent temporal structure without extra fusion machinery. Features come from the
+      **pool3D_4** layer, giving maps of 7x7x2x512 — width, height, temporal depth, and channel
+      count. Concatenating along the temporal dimension yields **7x7x1024** feature maps per
+      sequence. Training sequences are 16 consecutive frames.
+
+      **Event-oriented selection (Algorithm 1).** For each training sequence, global average pooling
+      reduces each of the 1,024 maps to a single value; maps exceeding a threshold have their index
+      marked active in the activation matrix. After processing the training set, a histogram over
+      that matrix ranks maps by how consistently they respond, and a second threshold selects the
+      final set. Different thresholds yield 537, 450, 380, 308, 245 or 178 feature maps.
+
+      **Hash code generation.** For **1,024-bit** codes, PCA is skipped and a threshold is applied
+      directly to the original features. For **512-bit** and **256-bit** codes, PCA first reduces
+      dimensionality to 512 or 256 principal components, then thresholding binarises them — high
+      values become 1, low values 0.
+
+      **Retrieval.** Query and database videos go through the same pipeline; matching is by Hamming
+      distance between codes.
+
+  - heading: Retrieval performance
+    body: |
+      **Feature selection helps rather than merely compressing.** At threshold T=20, the selected
+      **537 features outperform the full 1,024** on UCF-101 retrieval — direct evidence that the
+      discarded maps were contributing background-driven false matches. At T=30 (450 features)
+      performance is essentially unchanged. Below roughly 308 features precision drops at low ranks,
+      though it still recovers past 80% by Rank-30.
+
+      **Hash codes cost surprisingly little.** On UCF-101, 1,024-bit codes reproduce the CMC curve
+      of the original float features almost exactly. 512-bit and 256-bit codes lag slightly at low
+      rank but reach 100% precision by Rank-15. The paper's practical recommendation is 512 bits, as
+      the point where speed is gained without meaningful accuracy loss.
+
+      **MAP against hashing baselines** (50 random queries each): 83.21% on UCF-101, ahead of FFT
+      (82.14%), DSH (76.91%), PCAH (75.42%), SpH (74.65%), SH (74.35%) and LSH (70.62%). On HMDB51,
+      75.32% against FFT's 74.95%, with every method under 80% on that harder dataset.
+
+      HMDB51 behaves differently: selected and full features perform about equally at low recall,
+      with the advantage of selection appearing only at high recall. And 256-bit codes degrade
+      noticeably there, since dimensionality reduction plus binarisation compounds the information
+      loss on a dataset where each clip comes from a unique scenario.
+
+  - heading: Failure modes
+    body: |
+      The errors are interpretable and follow directly from what a 3D CNN encodes. A *sky diving*
+      query retrieves *jumping*; a *surfing* query retrieves *skiing* and *jet ski*. These are not
+      background confusions — they are genuine spatiotemporal similarity. A person falling through
+      air, or riding a board across a moving surface, produces motion patterns the network cannot
+      separate.
+
+      On HMDB51, *basketball dribbling* pulls in *pull-ups* — indoor sports with similar jump
+      dynamics. The *selfie smiling* query is the most instructive: one incorrectly retrieved video
+      is a *kissing* clip in which the performer is also smiling. The retrieval is arguably correct
+      about the facial expression and wrong only about the labelled category.
+
+contributions:
+  - >-
+    Analysed the 3D convolutional feature maps of a pre-trained model to find which activations
+    correspond to the event itself rather than its surroundings.
+  - >-
+    Introduced a feature selection algorithm that accumulates neuron activations across training
+    samples and keeps only consistently event-responsive maps, discarding the rest.
+  - >-
+    Demonstrated that a selected subset (537 of 1,024 maps) retrieves better than the full feature
+    set, since the discarded dimensions were sources of background-driven false matches.
+  - >-
+    Generated compact binary hash codes via PCA, cutting storage and turning similarity search into
+    bit comparison, with 512-bit codes performing close to the original features.
+
+datasets:
+  - name: UCF-101
+    note: >-
+      13,320 realistic action videos in 101 categories from YouTube, spanning object interaction,
+      musical instruments and sports, with wide variation in illumination, scale, pose and camera
+      motion.
+  - name: HMDB51
+    note: >-
+      6,474 manually annotated clips in 51 categories from YouTube, films and public databases.
+      Harder for retrieval because each clip comes from a distinct scenario, making intra-class data
+      highly diverse.
+
+results:
+  caption: Mean average precision for 1,024-bit hash-code retrieval over 50 random queries.
+  columns: [Method, UCF-101 MAP, HMDB51 MAP]
+  rows:
+    - ["LSH", "70.62%", "66.38%"]
+    - ["SH", "74.35%", "67.54%"]
+    - ["SpH", "74.65%", "68.85%"]
+    - ["PCAH", "75.42%", "67.12%"]
+    - ["DSH", "76.91%", "70.53%"]
+    - ["FFT", "82.14%", "74.95%"]
+    - ["Proposed (event-oriented + PCA)", "83.21%", "75.32%"]
+
+limitations:
+  - >-
+    Feature selection is per-event-type: the activation matrix is built from training sequences for
+    a particular event, so extending to a new event category requires rerunning the selection.
+  - >-
+    Both stages depend on hand-set thresholds — one for the activation, one for the histogram, one
+    for binarisation — chosen empirically rather than learned.
+  - >-
+    The retrieved-but-wrong cases are spatiotemporally genuine matches (surfing versus skiing,
+    smiling versus kissing), so they cannot be fixed by better feature selection within this design.
+  - >-
+    256-bit codes lose real accuracy on HMDB51, so the compression benefit does not extend
+    uniformly across datasets.
+  - >-
+    MAP is computed from 50 randomly selected queries per dataset, a small sample for a retrieval
+    evaluation.
+
+related:
+  - Efficient image recognition and retrieval on IoT-assisted energy-constrained platforms from big data repositories
+  - Integrating salient colors with rotational invariant texture features for image representation in retrieval systems
+  - "DeepStar: Detecting starring characters in movies"
+  - Action recognition in video sequences using deep bi-directional LSTM with CNN features
