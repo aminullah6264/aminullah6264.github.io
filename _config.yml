@@ -299,6 +299,9 @@ scholar:
 
   details_dir: bibliography
   details_layout: bibtex.html
+  # Suppress jekyll-scholar's own "Details" hyperlink after each entry;
+  # the green Details button in _layouts/bib.html is the one we use.
+  details_link: false
 
   query: "@*"
   group_by: year
